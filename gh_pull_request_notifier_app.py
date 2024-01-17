@@ -14,16 +14,15 @@ import json
 import os
 from requests import HTTPError
 
-logging.basicConfig(filename='mon_app.log', level=logging.INFO, format='%(levelname)s: %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
 API_GITHUB_BASE_URL = 'https://api.github.com'
 
 DIALOG_HEIGHT: int = 30
 DIALOG_WIDTH: int = 300
 
-
 # TODO: REMOVE FOR PRODUCTION
-#rumps.debug_mode(True)
+# rumps.debug_mode(True)
 
 # TODO: NOTIFICATION WHIT NUMBER OF PR TO REVIEW EACH HOUR
 # TODO: CONFIG FILE DOES NOT WORK
@@ -37,9 +36,14 @@ QUIT = "Quit"
 class PullRequestApp(rumps.App):
     def __init__(self, repo_search_filter: Optional[str] = None, ask_pat: Optional[bool] = False):
         super(PullRequestApp, self).__init__("PR Monitor")
+        self.active_threads = []
+        self.are_all_buttons_disabled = False
+        self.is_quitting = False
+        self.thread_lock = threading.Lock()
         self.github_token = None
         self.config = self.load_config()
-        self.repo_search_filter = self.config.get('repo_search')
+        self.repo_search_filter = self.config.get('repo_filter')
+        self.repo_search_filter = None
         self.menu_callbacks = {
             REFRESH: self.refresh,
             PAT_SETTING_MENU: self.ask_for_github_pat_token,
@@ -60,6 +64,15 @@ class PullRequestApp(rumps.App):
         self.refresh()
 
     def quit(self, _=None):
+        threading.Thread(target=self.quit_app, daemon=True).start()
+
+    def quit_app(self):
+        self.is_quitting = True
+        self.menu[QUIT].title = "Quitting..."
+        self.title = "PR Monitor 👋 (Quitting)"
+        self.disable_all_buttons()
+        for thread in self.active_threads:
+            thread.join()
         rumps.quit_application()
 
     def refresh(self, _=None):
@@ -94,11 +107,21 @@ class PullRequestApp(rumps.App):
             self.set_repository_search_filter(response.text)
             self.refresh()
 
-    def disable_refresh_button(self):
-        self.menu.get(REFRESH).set_callback(None)
+    def set_button_callback(self, title: str, cb):
+        button = self.menu.get(title)
+        if button is not None and hasattr(button, 'set_callback'):
+            button.set_callback(cb)
 
-    def enable_refresh_button(self):
-        self.menu.get(REFRESH).set_callback(self.menu_callbacks[REFRESH])
+    def disable_button(self, title: str) -> None:
+        self.set_button_callback(title, None)
+
+    def disable_all_buttons(self) -> None:
+        self.are_all_buttons_disables = True
+        for button_title in self.menu.keys():
+            self.set_button_callback(button_title, None)
+
+    def enable_button(self, title: str):
+        self.set_button_callback(title, self.menu_callbacks.get(title, None))
 
     def set_repository_search_filter(self, repo_filter: Optional[str] = None):
         self.config['repo_filter'] = repo_filter if repo_filter != '' else None
@@ -116,26 +139,34 @@ class PullRequestApp(rumps.App):
             return
 
         try:
+            def thread_target(repo, prs_info):
+                try:
+                    if self.is_quitting is False:
+                        self.process_repo(repo, prs_info)
+                finally:
+                    if thread in self.active_threads:
+                        self.active_threads.remove(thread)
+
             self.reset_menu()
-            self.disable_refresh_button()
+            self.disable_button(REFRESH)
             self.menu.get(REFRESH).title = 'Refreshing… ⏳'
             self.title = "PR Monitor ⏳"
             prs_info = {}
-            threads = []
 
             for repo in self.get_all_repositories(self.repo_search_filter):
-                thread = threading.Thread(target=self.process_repo, args=(repo, prs_info))
-                threads.append(thread)
+                thread = threading.Thread(target=lambda r=repo: thread_target(r, prs_info))
+                self.active_threads.append(thread)
                 thread.start()
 
-            for thread in threads:
+            for thread in self.active_threads:
                 thread.join()
 
             self.update_menu(prs_info)
         finally:
             self.refresh_lock.release()
             self.menu.get(REFRESH).title = REFRESH
-            self.enable_refresh_button()
+            if self.are_all_buttons_disabled is False:
+                self.enable_button(REFRESH)
 
     def update_menu(self, prs_info):
         has_urgent_pr = False
@@ -200,7 +231,8 @@ class PullRequestApp(rumps.App):
         try:
             with open(config_path, 'r') as config_file:
                 return json.load(config_file)
-        except FileNotFoundError:
+        except FileNotFoundError as e:
+            logging.warning(f'Error while loading config file: {e}')
             return {}
 
     def save_config(self, config):
@@ -322,6 +354,8 @@ class PullRequestApp(rumps.App):
             return {}
 
     def format_pr_info(self, owner: str, pr: dict) -> dict:
+        if self.is_quitting is True:
+            return {}
         pr_title = pr['title']
         pr_url = pr['html_url']
         is_draft = pr['draft']
