@@ -1,18 +1,17 @@
-import http
 import threading
+from github import Github, GithubException
 from typing import Optional
 
 import rumps
-import requests
 import keyring
 import argparse
 import logging
-import tkinter as tk
-from tkinter import simpledialog
 import webbrowser
 import json
 import os
-from requests import HTTPError
+
+from github.PullRequest import PullRequest
+from github.Repository import Repository
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
@@ -36,24 +35,24 @@ QUIT = "Quit"
 class PullRequestApp(rumps.App):
     def __init__(self, repo_search_filter: Optional[str] = None, ask_pat: Optional[bool] = False):
         super(PullRequestApp, self).__init__("PR Monitor")
+        self.github = self.connect_to_github(self.get_github_pat())
         self.active_threads = []
         self.are_all_buttons_disabled = False
-        self.is_quitting = False
+        self.abort_refresh = False
         self.thread_lock = threading.Lock()
-        self.github_token = None
         self.config = self.load_config()
         self.repo_search_filter = self.config.get('repo_filter')
         self.repo_search_filter = None
         self.menu_callbacks = {
             REFRESH: self.refresh,
-            PAT_SETTING_MENU: self.ask_for_github_pat_token,
+            PAT_SETTING_MENU: self.ask_for_github_pat,
             REPOSITORY_FILTER_SETTING_MENU: self.ask_for_repository_search_filter,
             QUIT: self.quit
         }
         if repo_search_filter is not None:
             self.repo_search_filter = repo_search_filter
         if ask_pat:
-            self.ask_for_github_pat_token()
+            self.ask_for_github_pat()
         self.reset_menu()
         self.timer = rumps.Timer(self.on_tick, 600)
         self.timer.start()
@@ -67,7 +66,7 @@ class PullRequestApp(rumps.App):
         threading.Thread(target=self.quit_app, daemon=True).start()
 
     def quit_app(self):
-        self.is_quitting = True
+        self.abort_refresh = True
         self.menu[QUIT].title = "Quitting..."
         self.title = "PR Monitor 👋 (Quitting)"
         self.disable_all_buttons()
@@ -76,11 +75,9 @@ class PullRequestApp(rumps.App):
         rumps.quit_application()
 
     def refresh(self, _=None):
-        if self.refresh_lock.locked():
-            return
         threading.Thread(target=self.update_prs, daemon=True).start()
 
-    def ask_for_github_pat_token(self, _=None):
+    def ask_for_github_pat(self, _=None):
         response = rumps.Window(
             title="GitHub PAT Token",
             message="Please enter your GitHub PAT:",
@@ -91,7 +88,7 @@ class PullRequestApp(rumps.App):
             dimensions=(DIALOG_WIDTH, DIALOG_HEIGHT)
         ).run()
         if response.clicked:
-            self.set_github_pat_token(response.text)
+            self.set_github_pat(response.text)
             self.refresh()
 
     def ask_for_repository_search_filter(self, _=None):
@@ -135,13 +132,13 @@ class PullRequestApp(rumps.App):
         self.menu.add(rumps.separator)
 
     def update_prs(self):
-        if not self.refresh_lock.acquire(blocking=False):
-            return
-
+        self.abort_refresh = True
+        self.refresh_lock.acquire(blocking=True)
+        self.abort_refresh = False
         try:
             def thread_target(repo, prs_info):
                 try:
-                    if self.is_quitting is False:
+                    if self.abort_refresh is False:
                         self.process_repo(repo, prs_info)
                 finally:
                     if thread in self.active_threads:
@@ -175,10 +172,10 @@ class PullRequestApp(rumps.App):
             prs = prs_info[repo]
             if len(prs) == 0:
                 continue
-            has_red_prs = any(pr['status'] == '🔴' for pr in prs)
-            has_orange_prs = any(pr['status'] in '💬' for pr in prs)
-            has_yellow_prs = any(pr['status'] in '🟡' for pr in prs)
-            has_green_prs = any(pr['status'] in '🟢' for pr in prs)
+            has_red_prs = any(pr.get('status', '') == '🔴' for pr in prs)
+            has_orange_prs = any(pr.get('status', '') in '💬' for pr in prs)
+            has_yellow_prs = any(pr.get('status', '') in '🟡' for pr in prs)
+            has_green_prs = any(pr.get('status', '') in '🟢' for pr in prs)
 
             status = '⚪'
             if has_red_prs:
@@ -195,8 +192,10 @@ class PullRequestApp(rumps.App):
             submenu = rumps.MenuItem(repo)
             submenu.title = f"{status} {repo}"
             self.menu.add(submenu)
-            sorted_prs = sorted(prs, key=lambda pr: pr['number'])
+            sorted_prs = sorted(prs, key=lambda pr: pr.get('number', 0))
             for pr in sorted_prs:
+                if pr.get('title') is None:
+                    continue
                 title = f"{pr['status']} ({pr['number_of_reviews']}👁️) [{pr['number_of_completed_reviews']} / {pr['total_reviewers']}] ➤ {pr['title']}"
                 item = submenu.get(title)
                 if item is None:
@@ -210,9 +209,9 @@ class PullRequestApp(rumps.App):
             else:
                 self.title = "PR Monitor"
 
-    def process_repo(self, repo, prs_info):
-        repo_name = repo['name']
-        owner = repo['owner']['login']
+    def process_repo(self, repo: Repository, prs_info):
+        repo_name = repo.name
+        owner = repo.owner.login
         prs = self.get_pull_requests_for_repo(owner, repo_name)
         formatted_prs = [self.format_pr_info(owner, pr) for pr in prs]
         prs_info[repo_name] = formatted_prs
@@ -240,107 +239,77 @@ class PullRequestApp(rumps.App):
         with open(config_path, 'w') as config_file:
             json.dump(config, config_file)
 
-    def request_github_token(self):
-        root = tk.Tk()
-        root.withdraw()
-        token = simpledialog.askstring("GitHub Token", "Please enter your GitHub PAT:", show='*')
-        root.destroy()
-        return token.strip()
+    def connect_to_github(self, token):
+        return Github(token)
 
-    def get_github_token(self):
-        if not self.github_token:
-            self.github_token = keyring.get_password('github', 'token')
-        return self.github_token
-
-    def set_github_pat_token(self, token: str) -> None:
+    def set_github_pat(self, token: str) -> None:
         keyring.set_password('github', 'token', token)
+        self.connect_to_github(token)
 
-    def get_headers(self) -> dict:
-        return {'Authorization': f'token {self.get_github_token()}'}
+    def get_github_pat(self):
+        token = keyring.get_password('github', 'token')
+        if token is None:
+            self.ask_for_github_pat()
+        return token
 
     def get_all_repositories(self, filter_keyword: str = None) -> list:
         filter_keyword = filter_keyword.lower() if filter_keyword else None
-        repos, page = [], 1
-
         try:
-            while True:
-                url = f'{API_GITHUB_BASE_URL}/user/repos?type=all&per_page=100&page={page}'
-                response = requests.get(url, headers=self.get_headers())
-                response.raise_for_status()
-                page_repos = response.json()
-                if not page_repos:
-                    break
-                if filter_keyword:
-                    page_repos = [repo for repo in page_repos if filter_keyword in repo['name'].lower()]
-                repos.extend(page_repos)
-                page += 1
-        except HTTPError as e:
-            self.handle_http_error(f'Failed to fetch repositories', e)
-        return repos
+            repos = []
+            for repo in self.github.get_user().get_repos():
+                if not filter_keyword or (filter_keyword in repo.name.lower()):
+                    repos.append(repo)
+            return repos
+        except GithubException as e:
+            logging.error(f'Error fetching repositories: {e}')
+            return []
 
     def get_current_user_login(self) -> str:
-        user_url = f'{API_GITHUB_BASE_URL}/user'
         try:
-            response = requests.get(user_url, headers=self.get_headers())
-            response.raise_for_status()
-            return response.json().get('login', '')
-        except HTTPError as e:
-            self.handle_http_error('Failed to fetch current GitHub user', e)
+            return self.github.get_user().login
+        except GithubException as e:
+            logging.error(f'Failed to fetch current GitHub user: {e}')
             return ''
 
     def get_branch_protection_info(self, owner: str, repo: str, branch: str) -> dict:
-        url = f'{API_GITHUB_BASE_URL}/repos/{owner}/{repo}/branches/{branch}/protection'
         try:
-            response = requests.get(url, headers=self.get_headers())
-            response.raise_for_status()
-            protection_info = response.json()
-            required_reviewers = protection_info.get('required_pull_request_reviews', {}).get(
-                'required_approving_review_count', 0)
+            repository = self.github.get_repo(f"{owner}/{repo}")
+            branch = repository.get_branch(branch)
+            protection = branch.get_protection().required_pull_request_reviews
+            required_reviewers = protection.required_approving_review_count if protection else 0
             return {'required_reviewers': required_reviewers}
-        except HTTPError as e:
-            self.handle_http_error(f'Failed to fetch branch protection information for {branch}', e)
+        except GithubException as e:
+            logging.error(f'Failed to fetch branch protection information for {branch}: {e}')
             return {'required_reviewers': 0}
 
     def get_pull_requests_for_repo(self, owner: str, repo: str) -> list:
         try:
-            url = f'{API_GITHUB_BASE_URL}/repos/{owner}/{repo}/pulls'
-            response = requests.get(url, headers=self.get_headers())
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.HTTPError as e:
-            self.handle_http_error(f'Failed to fetch pull requests list from repository: {repo}', e)
-        return []
-
-    def handle_http_error(self, custom_error_message: str, e: HTTPError) -> None:
-        if e.response.status_code == http.HTTPStatus.UNAUTHORIZED:
-            logging.warning(f'HTTP Warning: {custom_error_message} -> {e}')
-            self.ask_for_github_pat_token()
-        else:
-            logging.error(f'HTTP Error: {custom_error_message} -> {e}')
+            repository = self.github.get_repo(f"{owner}/{repo}")
+            prs = repository.get_pulls(state='open', sort='created')
+            return [pr for pr in prs]
+        except GithubException as e:
+            logging.error(f'Error fetching pull requests for {repo}: {e}')
+            return []
 
     def get_pr_reviewers_info(self, owner: str, repo: str, pr_number: int, base_branch: str) -> dict:
-        reviews_url = f'{API_GITHUB_BASE_URL}/repos/{owner}/{repo}/pulls/{pr_number}/reviews'
-        requested_reviewers_url = f'{API_GITHUB_BASE_URL}/repos/{owner}/{repo}/pulls/{pr_number}/requested_reviewers'
         try:
-            reviews_response = requests.get(reviews_url, headers=self.get_headers())
-            reviews_response.raise_for_status()
-            requested_reviewers_response = requests.get(requested_reviewers_url, headers=self.get_headers())
-            requested_reviewers_response.raise_for_status()
-            reviews = reviews_response.json()
-            requested_reviewers = requested_reviewers_response.json()
+            repository = self.github.get_repo(f"{owner}/{repo}")
+            pull_request = repository.get_pull(pr_number)
+
+            reviews = pull_request.get_reviews()
+            requested_reviewers = pull_request.get_review_requests()[0]  # Returns a tuple of (users, teams)
 
             current_user = self.get_current_user_login()
-            has_current_user_reviewed = any(review['user']['login'] == current_user for review in reviews)
+            has_current_user_reviewed = any(review.user.login == current_user for review in reviews)
             has_current_user_requested = any(
-                review['user']['login'] == current_user for review in reviews if review['state'] == 'CHANGES_REQUESTED')
-            review_statuses = {review['user']['login']: review['state'] for review in reviews}
+                review.user.login == current_user and review.state == 'CHANGES_REQUESTED' for review in reviews)
+            review_statuses = {review.user.login: review.state for review in reviews}
             number_of_reviews = len(set(review_statuses.keys()))
             number_of_completed_reviews = len(
-                set([review['user']['login'] for review in reviews if review['state'] == 'APPROVED']))
+                set([review.user.login for review in reviews if review.state == 'APPROVED']))
+
             branch_protection_info = self.get_branch_protection_info(owner, repo, base_branch)
-            number_of_requested_reviewers = len(requested_reviewers.get('users', []))
-            number_of_requested_reviewers = max(number_of_requested_reviewers,
-                                                branch_protection_info['required_reviewers'])
+            number_of_requested_reviewers = max(requested_reviewers.totalCount, branch_protection_info['required_reviewers'])
 
             return {
                 'number_of_reviews': number_of_reviews,
@@ -349,19 +318,19 @@ class PullRequestApp(rumps.App):
                 'has_current_user_reviewed': has_current_user_reviewed,
                 'has_current_user_requested': has_current_user_requested
             }
-        except HTTPError as e:
-            self.handle_http_error(f'Failed to fetch PR reviewers information for repository {repo}', e)
+        except GithubException as e:
+            logging.warning(f'Failed to fetch PR reviewers information for repository {repo}: {e}')
             return {}
 
-    def format_pr_info(self, owner: str, pr: dict) -> dict:
-        if self.is_quitting is True:
+    def format_pr_info(self, owner: str, pr: PullRequest) -> dict:
+        if self.abort_refresh is True:
             return {}
-        pr_title = pr['title']
-        pr_url = pr['html_url']
-        is_draft = pr['draft']
-        pr_number = pr['number']
-        base_branch = pr['base']['ref']
-        reviewers_info = self.get_pr_reviewers_info(owner, pr['head']['repo']['name'], pr_number, base_branch)
+        pr_title = pr.title
+        pr_url = pr.html_url
+        is_draft = pr.draft
+        pr_number = pr.number
+        base_branch = pr.base.ref
+        reviewers_info = self.get_pr_reviewers_info(owner, pr.head.repo.name, pr_number, base_branch)
 
         status = "🟢"
         if is_draft:
