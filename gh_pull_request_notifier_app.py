@@ -21,7 +21,9 @@ API_GITHUB_BASE_URL = 'https://api.github.com'
 DIALOG_HEIGHT: int = 30
 DIALOG_WIDTH: int = 300
 
-rumps.debug_mode(True)
+
+# TODO: REMOVE FOR PRODUCTION
+#rumps.debug_mode(True)
 
 # TODO: NOTIFICATION WHIT NUMBER OF PR TO REVIEW EACH HOUR
 # TODO: CONFIG FILE DOES NOT WORK
@@ -29,11 +31,7 @@ rumps.debug_mode(True)
 REFRESH = "Force Refresh"
 PAT_SETTING_MENU = "Set Github Personal Access Token"
 REPOSITORY_FILTER_SETTING_MENU = "Set Repository Search Filter"
-
-STATIC_MENU = [
-    {REFRESH},
-    {PAT_SETTING_MENU},
-    {REPOSITORY_FILTER_SETTING_MENU}]
+QUIT = "Quit"
 
 
 class PullRequestApp(rumps.App):
@@ -45,7 +43,8 @@ class PullRequestApp(rumps.App):
         self.menu_callbacks = {
             REFRESH: self.refresh,
             PAT_SETTING_MENU: self.ask_for_github_pat_token,
-            REPOSITORY_FILTER_SETTING_MENU: self.ask_for_repository_search_filter
+            REPOSITORY_FILTER_SETTING_MENU: self.ask_for_repository_search_filter,
+            QUIT: self.quit
         }
         if repo_search_filter is not None:
             self.repo_search_filter = repo_search_filter
@@ -55,11 +54,13 @@ class PullRequestApp(rumps.App):
         self.timer = rumps.Timer(self.on_tick, 600)
         self.timer.start()
         # rumps.notification("Mon Titre", "Message de test", "Mon sous-titre", sound=True)
-
         self.refresh_lock = threading.Lock()
 
     def on_tick(self, _):
         self.refresh()
+
+    def quit(self, _=None):
+        rumps.quit_application()
 
     def refresh(self, _=None):
         if self.refresh_lock.locked():
