@@ -136,14 +136,6 @@ class PullRequestApp(rumps.App):
         self.refresh_lock.acquire(blocking=True)
         self.abort_refresh = False
         try:
-            def thread_target(repo, prs_info):
-                try:
-                    if self.abort_refresh is False:
-                        self.process_repo(repo, prs_info)
-                finally:
-                    if thread in self.active_threads:
-                        self.active_threads.remove(thread)
-
             self.reset_menu()
             self.disable_button(REFRESH)
             self.menu.get(REFRESH).title = 'Refreshing… ⏳'
@@ -151,7 +143,7 @@ class PullRequestApp(rumps.App):
             prs_info = {}
 
             for repo in self.get_all_repositories(self.repo_search_filter):
-                thread = threading.Thread(target=lambda r=repo: thread_target(r, prs_info))
+                thread = threading.Thread(target=self.process_repo, args=(repo, prs_info))
                 self.active_threads.append(thread)
                 thread.start()
 
@@ -160,6 +152,7 @@ class PullRequestApp(rumps.App):
 
             self.update_menu(prs_info)
         finally:
+            self.active_threads.clear()
             self.refresh_lock.release()
             self.menu.get(REFRESH).title = REFRESH
             if self.are_all_buttons_disabled is False:
@@ -192,6 +185,8 @@ class PullRequestApp(rumps.App):
             submenu = rumps.MenuItem(repo)
             submenu.title = f"{status} {repo}"
             self.menu.add(submenu)
+            print(submenu)
+            # TODO: Pas toujours toutes les donnees...
             sorted_prs = sorted(prs, key=lambda pr: pr.get('number', 0))
             for pr in sorted_prs:
                 if pr.get('title') is None:
