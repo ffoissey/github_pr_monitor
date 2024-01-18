@@ -1,13 +1,13 @@
 from setuptools import setup
 
-APP = ['gh_pull_request_notifier_app.py']
+APP = ['gh_pr_monitor.py']
 DATA_FILES = []
 OPTIONS = {
     'argv_emulation': True,
     'plist': {
         'LSUIElement': True,
     },
-    'packages': ['rumps', 'requests', 'keyring'],
+    'packages': ['rumps', 'PyGithub', 'keyring'],
 }
 
 setup(
