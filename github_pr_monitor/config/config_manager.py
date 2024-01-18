@@ -1,12 +1,14 @@
 import json
 import logging
 import os
+from typing import Any
 
 
 class ConfigManager:
     DEFAULT_DIR: str = '~/Library/Application Support/PRMonitor'
     DEFAULT_FILE_NAME: str = 'config.json'
     REPO_SEARCH_FILTER_KEY: str = 'repo_search_filter'
+    REFRESH_TIME: str = 'refresh_time'
 
     def __init__(self, dir_name: str = DEFAULT_DIR, file_name: str = DEFAULT_FILE_NAME):
         self.config_path = self._get_config_path(dir_name, file_name)
@@ -16,12 +18,18 @@ class ConfigManager:
         return self._get_config(self.REPO_SEARCH_FILTER_KEY)
 
     def set_repo_search_filter(self, repo_search_filter: str):
-        self._set_config(self.REPO_SEARCH_FILTER_KEY, repo_search_filter.lower() if repo_search_filter != '' else None)
+        self._set_config(self.REPO_SEARCH_FILTER_KEY, repo_search_filter)
+
+    def get_refresh_time(self):
+        return self._get_config(self.REFRESH_TIME)
+
+    def set_refresh_time(self, refresh_time: int):
+        self._set_config(self.REFRESH_TIME, refresh_time)
 
     def _get_config(self, key: str):
         return self.config.get(key)
 
-    def _set_config(self, key: str, value: str):
+    def _set_config(self, key: str, value: Any):
         self.config[key] = value
         self._save_config()
 
