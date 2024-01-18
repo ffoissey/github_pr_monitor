@@ -1,3 +1,4 @@
+import http
 import threading
 from github import Github, GithubException
 from typing import Optional, Callable, List
@@ -23,6 +24,7 @@ logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 # TODO: NOTIFICATION WHIT NUMBER OF PR TO REVIEW EACH HOUR
 # TODO: MENU FOR SETTINGS
 # TODO: IF NO PAT, WARNING
+
 class ReviewersInfo:
     def __init__(self, number_of_reviews: int, number_of_completed_reviews: int,
                  number_of_requested_reviewers: int, has_current_user_reviewed: bool,
@@ -79,7 +81,7 @@ class RepositoryInfo:
         return highest_status, is_urgent
 
 
-class PullRequestApp(rumps.App):
+class GithubPullRequestMonitorApp(rumps.App):
     APP_NAME: str = "PR Monitor"
 
     REFRESH_MENU: str = "Force Refresh"
@@ -88,10 +90,10 @@ class PullRequestApp(rumps.App):
     QUIT_MENU = "Quit"
 
     DIALOG_HEIGHT: int = 30
-    DIALOG_WIDTH: int = 300
+    DIALOG_WIDTH: int = 400
 
     def __init__(self, repo_search_filter: Optional[str] = None, ask_pat: Optional[bool] = False):
-        super(PullRequestApp, self).__init__(self.APP_NAME)
+        super(GithubPullRequestMonitorApp, self).__init__(self.APP_NAME)
         self.config_manager = ConfigManager()
         self.menu_callbacks = {
             self.REFRESH_MENU: self.refresh,
@@ -148,22 +150,26 @@ class PullRequestApp(rumps.App):
             self._disable_button(self.REFRESH_MENU)
             self.menu.get(self.REFRESH_MENU).title = 'Refreshing… ⏳'
             self.title = f'{self.APP_NAME} ⏳'
-            repositories_info = self.pull_request_processor.get_repositories_info(self.repo_search_filter)
-            self._update_repositories(repositories_info)
+            try:
+                repositories_info = self.pull_request_processor.get_repositories_info(self.repo_search_filter)
+                self._update_repositories(repositories_info)
+            except GithubException as e:
+                if e.status == http.HTTPStatus.UNAUTHORIZED:
+                    self.title = f'{self.APP_NAME} ⚠️ (Invalid PAT)'
+                logging.error(e.message)
+
             self.menu.get(self.REFRESH_MENU).title = self.REFRESH_MENU
             if self.are_all_buttons_disabled is False:
                 self._enable_button(self.REFRESH_MENU)
 
     def _update_repositories(self, repositories_info: List[RepositoryInfo]):
         for repository_info in repositories_info:
-            if len(repository_info.pull_requests_info) == 0:
-                continue
-            submenu = MenuItem(repository_info.name)
-            submenu.title = f"{repository_info.status} {repository_info.name}"
-
-            self.menu.add(submenu)
-            self._update_pull_requests(submenu, repository_info.pull_requests_info)
-            self.title = f'{self.APP_NAME} 🔔' if repository_info.is_urgent else self.APP_NAME
+            if len(repository_info.pull_requests_info) > 0:
+                submenu = MenuItem(repository_info.name)
+                submenu.title = f"{repository_info.status} {repository_info.name}"
+                self.menu.add(submenu)
+                self._update_pull_requests(submenu, repository_info.pull_requests_info)
+                self.title = f'{self.APP_NAME} 🔔' if repository_info.is_urgent else self.APP_NAME
 
     def _update_pull_requests(self, submenu: MenuItem, prs_info: List[PullRequestInfo]):
         for pr_info in prs_info:
@@ -219,6 +225,7 @@ class PullRequestApp(rumps.App):
         if button is not None and hasattr(button, 'set_callback'):
             button.set_callback(cb)
 
+
 class ConfigManager:
     DEFAULT_DIR: str = '~/Library/Application Support/PRMonitor'
     DEFAULT_FILE_NAME: str = 'config.json'
@@ -231,8 +238,8 @@ class ConfigManager:
     def get_repo_search_filter(self):
         return self._get_config(self.REPO_SEARCH_FILTER_KEY)
 
-    def set_repo_search_filter(self, repo_search_filter: Optional[str]):
-        self._set_config(self.REPO_SEARCH_FILTER_KEY, repo_search_filter if repo_search_filter != '' else None)
+    def set_repo_search_filter(self, repo_search_filter: str):
+        self._set_config(self.REPO_SEARCH_FILTER_KEY, repo_search_filter.lower() if repo_search_filter != '' else None)
 
     def _get_config(self, key: str):
         return self.config.get(key)
@@ -268,7 +275,10 @@ class KeyringInterface:
 
     @staticmethod
     def get_github_pat():
-        return keyring.get_password('github', 'token')
+        token = keyring.get_password('github', 'token')
+        if token == '':
+            return None
+        return token
 
 
 class GithubAPIFetcher:
@@ -280,22 +290,14 @@ class GithubAPIFetcher:
 
     def get_all_repositories(self, filter_keyword: str = None) -> list:
         filter_keyword = filter_keyword.lower() if filter_keyword else None
-        try:
-            repos = []
-            for repo in self.github.get_user().get_repos():
-                if not filter_keyword or (filter_keyword in repo.name.lower()):
-                    repos.append(repo)
-            return repos
-        except GithubException as e:
-            logging.error(f'Error fetching repositories: {e}')
-            return []
+        repos = []
+        for repo in self.github.get_user().get_repos():
+            if not filter_keyword or (filter_keyword in repo.name.lower()):
+                repos.append(repo)
+        return repos
 
     def get_current_user_login(self) -> str:
-        try:
-            return self.github.get_user().login
-        except GithubException as e:
-            logging.error(f'Failed to fetch current GitHub user: {e}')
-            return ''
+        return self.github.get_user().login
 
     def get_branch_requested_reviewers(self, owner: str, repo: str, branch: str) -> int:
         try:
@@ -305,17 +307,12 @@ class GithubAPIFetcher:
             required_reviewers = protection.required_approving_review_count if protection else 0
             return required_reviewers
         except GithubException as e:
-            logging.error(f'Failed to fetch branch protection information for {branch}: {e}')
+            logging.warning(f'Failed to fetch branch protection information for {branch}: {e}')
             return 0
 
-    def get_pull_requests_for_repo(self, owner: str, repo: str) -> list:
-        try:
-            repository = self.github.get_repo(f"{owner}/{repo}")
-            prs = repository.get_pulls(state='open', sort='created')
-            return [pr for pr in prs]
-        except GithubException as e:
-            logging.error(f'Error fetching pull requests for {repo}: {e}')
-            return []
+    def get_pull_requests_for_repo(self, owner: str, repo: str) -> List[PullRequest]:
+        repository = self.github.get_repo(f"{owner}/{repo}")
+        return repository.get_pulls(state='open', sort='created')
 
     def get_reviewers_info(self, owner: str, repo: str, id: int, base_branch: str) -> Optional[ReviewersInfo]:
         try:
@@ -405,5 +402,5 @@ if __name__ == "__main__":
     parser.add_argument("-p", "--pat", help="Set GitHub Personal Access Token", action="store_true")
     args = parser.parse_args()
 
-    app = PullRequestApp(repo_search_filter=args.repo_search_filter, ask_pat=args.pat)
+    app = GithubPullRequestMonitorApp(repo_search_filter=args.repo_search_filter, ask_pat=args.pat)
     app.run()
