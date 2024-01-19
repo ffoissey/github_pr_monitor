@@ -13,7 +13,7 @@ class PullRequestInfo:
     def status(self) -> str:
         if self.is_draft:
             return "📃"
-        elif self.reviewers_info.number_of_reviews >= self.reviewers_info.number_of_requested_reviewers:
+        elif self.reviewers_info.number_of_completed_reviews >= self.reviewers_info.number_of_requested_reviewers:
             return "🟡"
         elif self.reviewers_info.has_current_user_reviewed:
             return "💬" if self.reviewers_info.has_current_user_requested else "✅"
