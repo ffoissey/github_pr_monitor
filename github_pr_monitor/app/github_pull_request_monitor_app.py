@@ -194,7 +194,6 @@ class GithubPullRequestMonitorApp(rumps.App):
             logging.warning(e)
 
     def _reset_menu(self):
-        self.repositories_info = []
         self.menu.clear()
         settings_menu = MenuItem(self.SETTINGS_MENU)
         for title, callback in self.setting_submenu_callbacks.items():
