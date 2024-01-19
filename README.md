@@ -23,7 +23,8 @@ To set up the GitHub Pull Request Monitor, you need to clone the repository and 
 The script will create a virtual environment, install necessary dependencies, and build the application using PyInstaller.
 
 ## Running the Application
-After the installation, you can run the application by opening the built application in the `dist` directory:
+After installation, you can run the application by opening the built application in the `dist` directory from the GUI or by running the command `open ./dist/github_pr_monitor.app`
+
 On first run, you'll need to provide your GitHub Personal Access Token for the app to fetch and monitor your pull requests.
 
 ## Contributing
