@@ -47,6 +47,7 @@ class GithubPullRequestMonitorApp(rumps.App):
         self.repositories_info = []
         self.are_all_buttons_disabled = False
         self.processing_done = True
+        self.invalid_pat = False
         self.refresh_lock = threading.Lock()
 
         # Settings init
@@ -111,6 +112,7 @@ class GithubPullRequestMonitorApp(rumps.App):
 
     def update_menu(self):
         self.pull_request_processor.set_abort_process_flag(True)
+        self.invalid_pat = False
         with self.refresh_lock:
             self.processing_done = False
             self.pull_request_processor.set_abort_process_flag(False)
@@ -122,8 +124,8 @@ class GithubPullRequestMonitorApp(rumps.App):
                     self.keyring_manager.get_github_pat(), self.repo_search_filter)
             except GithubException as e:
                 if e.status == http.HTTPStatus.UNAUTHORIZED:
-                    self.title = f'{self.APP_NAME} ⚠️ (Invalid PAT)'
-                logging.error(e.message)
+                    self.invalid_pat = True
+                logging.error(e.message or "Unexpected Error")
 
             self.menu.get(self.REFRESH_MENU).title = self.REFRESH_MENU
             if self.are_all_buttons_disabled is False:
@@ -137,6 +139,11 @@ class GithubPullRequestMonitorApp(rumps.App):
             self._update_repositories()
 
     def _update_repositories(self):
+        self.title = self.APP_NAME
+        if self.invalid_pat is True:
+            self.title += ' ⚠️ (Invalid PAT)'
+            return
+
         self.menu.add(separator)
         is_urgent = False
         for repository_info in self.repositories_info:
@@ -147,7 +154,8 @@ class GithubPullRequestMonitorApp(rumps.App):
                 self._update_pull_requests(submenu, repository_info.pull_requests_info)
                 if repository_info.is_urgent is True:
                     is_urgent = True
-        self.title = f'{self.APP_NAME} 🔔' if is_urgent else self.APP_NAME
+        if is_urgent is True:
+            self.title += ' 🔔'
 
     def _update_pull_requests(self, submenu: MenuItem, prs_info: List[PullRequestInfo]):
         for pr_info in prs_info:
@@ -171,6 +179,9 @@ class GithubPullRequestMonitorApp(rumps.App):
         self.repo_search_filter = repo_search_filter.lower() if repo_search_filter != '' else None
         self.config_manager.set_repo_search_filter(self.repo_search_filter)
 
+    def _set_repo_github_pat(self, github_pat: str):
+        self.keyring_manager.set_github_pat(github_pat if github_pat != '' else None)
+
     def _set_refresh_time(self, refresh_time_in_minutes_string: str):
         try:
             refresh_time_in_seconds: int = int(refresh_time_in_minutes_string) * 60
@@ -183,6 +194,7 @@ class GithubPullRequestMonitorApp(rumps.App):
             logging.warning(e)
 
     def _reset_menu(self):
+        self.repositories_info = []
         self.menu.clear()
         settings_menu = MenuItem(self.SETTINGS_MENU)
         for title, callback in self.setting_submenu_callbacks.items():
@@ -204,9 +216,11 @@ class GithubPullRequestMonitorApp(rumps.App):
             dimensions=(self.DIALOG_WIDTH, self.DIALOG_HEIGHT)
         ).run()
         if response.clicked:
-            callback(response.text.strip())
-            if do_refresh is True:
-                self.refresh()
+            value: str = response.text.strip()
+            if value:
+                callback(value)
+                if do_refresh is True:
+                    self.refresh()
 
     def _disable_all_buttons(self) -> None:
         self.are_all_buttons_disabled = True
