@@ -96,7 +96,7 @@ class GithubPullRequestMonitorApp(rumps.App):
 
     def ask_for_github_pat(self, _=None):
         self._open_dialog(title="GitHub Personal Access Token", message="Please enter your GitHub PAT:",
-                          callback=self.keyring_manager.set_github_pat)
+                          callback=self.keyring_manager.set_github_pat, secure=True)
 
     def ask_for_repository_search_filter(self, _=None):
         self._open_dialog(title="Repository Search Filter", message="Please enter a filter:",
@@ -206,13 +206,14 @@ class GithubPullRequestMonitorApp(rumps.App):
                 self.menu.add(MenuItem(title=title, callback=callback))
 
     def _open_dialog(self, title: str, message: str, callback: Callable[[str], None], default_text: str = '',
-                     do_refresh: bool = True):
+                     secure: bool = False, do_refresh: bool = True):
         response = rumps.Window(
             title=title,
             message=message,
             default_text=f"{default_text or ''}",
             ok="Submit",
             cancel="Cancel",
+            secure=secure,
             dimensions=(self.DIALOG_WIDTH, self.DIALOG_HEIGHT)
         ).run()
         if response.clicked:
