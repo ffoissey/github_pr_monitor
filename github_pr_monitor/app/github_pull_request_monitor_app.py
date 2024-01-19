@@ -126,6 +126,8 @@ class GithubPullRequestMonitorApp(rumps.App):
                 if e.status == http.HTTPStatus.UNAUTHORIZED:
                     self.invalid_pat = True
                 logging.error(e.message or "Unexpected Error")
+            except Exception as e:
+                logging.error(e or "Unexpected Error")
 
             self.menu.get(self.REFRESH_MENU).title = self.REFRESH_MENU
             if self.are_all_buttons_disabled is False:
