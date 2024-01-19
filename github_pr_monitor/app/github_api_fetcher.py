@@ -2,6 +2,7 @@ import logging
 from typing import List, Optional
 
 from github import Github, GithubException
+from github.Auth import Token
 from github.PaginatedList import PaginatedList
 from github.PullRequest import PullRequest
 from github.Repository import Repository
@@ -34,7 +35,8 @@ class GithubAPIFetcher:
             if self.github is not None:
                 self._close_github_connection()
             self.github_pat = github_pat
-            self.github = Github(self.github_pat, pool_size=self.pool_size)
+            auth = Token(github_pat)
+            self.github = Github(auth=auth, pool_size=self.pool_size, per_page=100)
 
     def _close_github_connection(self) -> None:
         if self.github is not None:

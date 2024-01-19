@@ -31,7 +31,9 @@ MANIFEST
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
-py2appenv
+
+# venv
+pyinstallerenv
 
 # Installer logs
 pip-log.txt

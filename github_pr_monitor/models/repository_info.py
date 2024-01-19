@@ -9,7 +9,7 @@ class RepositoryInfo:
         self.pull_requests_info = pull_requests_info
         self.status, self.is_urgent = self._get_highest_priority_status()
 
-    def _get_highest_priority_status(self) -> tuple[str, bool]:
+    def _get_highest_priority_status(self):
         priority_order = ['🔴', '💬', '🟡', '🟢', '⚪']
         default_status = priority_order[-1]
         highest_status = default_status
