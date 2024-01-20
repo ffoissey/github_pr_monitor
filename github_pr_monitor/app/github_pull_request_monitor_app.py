@@ -16,9 +16,10 @@ from github_pr_monitor.security.keyring_manager import KeyringManager
 # TODO: REMOVE FOR PRODUCTION
 # rumps.debug_mode(True)
 
-# TODO: NOTIFICATION WHIT NUMBER OF PR TO REVIEW EACH HOUR
+# TODO: NOTIFICATION WITH NUMBER OF PR TO REVIEW EACH HOUR
 # TODO: CHANGE APP ICON
-
+# TODO: CHECK PIP3 AND PIP INSTEAD OF JUST PIP
+# TODO: SORT REPOS BY NAME AND PRS BY ID
 
 class GithubPullRequestMonitorApp(rumps.App):
     APP_NAME: str = "PR Monitor"
@@ -89,9 +90,16 @@ class GithubPullRequestMonitorApp(rumps.App):
         rumps.quit_application()
 
     def refresh(self, _=None):
-        if self.processing_done is True:
+        self.pull_request_processor.set_abort_process_flag(True)
+        self.processing_done = False
+        self.invalid_pat = False
+        with self.refresh_lock:
+            self.pull_request_processor.set_abort_process_flag(False)
             self._reset_menu()
-        threading.Thread(target=self.update_menu, daemon=True).start()
+            self._disable_button(self.REFRESH_MENU)
+            self.menu.get(self.REFRESH_MENU).title = 'Refreshing… ⏳'
+            self.title = f'{self.APP_NAME} ⏳'
+            threading.Thread(target=self.update_menu, daemon=True).start()
         self.check_update_timer.start()
 
     def ask_for_github_pat(self, _=None):
@@ -116,9 +124,6 @@ class GithubPullRequestMonitorApp(rumps.App):
         with self.refresh_lock:
             self.processing_done = False
             self.pull_request_processor.set_abort_process_flag(False)
-            self._disable_button(self.REFRESH_MENU)
-            self.menu.get(self.REFRESH_MENU).title = 'Refreshing… ⏳'
-            self.title = f'{self.APP_NAME} ⏳'
             try:
                 self.repositories_info = self.pull_request_processor.get_repositories_info(
                     self.keyring_manager.get_github_pat(), self.repo_search_filter)
@@ -219,10 +224,9 @@ class GithubPullRequestMonitorApp(rumps.App):
         ).run()
         if response.clicked:
             value: str = response.text.strip()
-            if value:
-                callback(value)
-                if do_refresh is True:
-                    self.refresh()
+            callback(value)
+            if do_refresh is True:
+                self.refresh()
 
     def _disable_all_buttons(self) -> None:
         self.are_all_buttons_disabled = True
