@@ -37,13 +37,14 @@ class RepositoryInfoFetcher(GithubAPIFetcher):
             self.waiting_for_stop_processing()
         finally:
             self.active_threads.clear()
-        return repositories_info
+        return sorted(repositories_info, key=lambda repository_info: repository_info.name)
 
     def _process_repo(self, repo: Repository, repositories_info: List[RepositoryInfo]) -> None:
         repo_name = repo.name
         owner = repo.owner.login
         prs = super().get_pull_requests_for_repo(owner, repo_name)
         pull_requests_info: List[PullRequestInfo] = [self._format_pr_info(owner, pr) for pr in prs]
+        pull_requests_info = sorted(pull_requests_info, key=lambda pull_request_info: pull_request_info.id)
         with self.prs_info_lock:
             repositories_info.append(RepositoryInfo(name=repo_name, pull_requests_info=pull_requests_info))
 

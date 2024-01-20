@@ -19,7 +19,6 @@ from github_pr_monitor.security.keyring_manager import KeyringManager
 # TODO: NOTIFICATION WITH NUMBER OF PR TO REVIEW EACH HOUR
 # TODO: CHANGE APP ICON
 # TODO: CHECK PIP3 AND PIP INSTEAD OF JUST PIP
-# TODO: SORT REPOS BY NAME AND PRS BY ID
 
 class GithubPullRequestMonitorApp(rumps.App):
     APP_NAME: str = "PR Monitor"
