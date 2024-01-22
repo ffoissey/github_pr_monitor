@@ -163,8 +163,10 @@ class GithubPullRequestMonitorApp(rumps.App):
 
         self.menu.add(separator)
         is_urgent = False
+        has_no_pr = True
         for repository_info in self.repositories_info:
             if len(repository_info.pull_requests_info) > 0:
+                has_no_pr = False
                 submenu = MenuItem(repository_info.name)
                 submenu.title = f"{repository_info.status} {repository_info.name}"
                 self.menu.add(submenu)
@@ -173,6 +175,11 @@ class GithubPullRequestMonitorApp(rumps.App):
                     is_urgent = True
         if is_urgent is True:
             self.title += ' 🔔'
+        elif has_no_pr is True:
+            self.title += ' 😴'
+            self.menu.add(MenuItem("No pull request to review"))
+        else:
+            self.title += ' ☑️'
 
     def _update_pull_requests(self, submenu: MenuItem, prs_info: List[PullRequestInfo]):
         for pr_info in prs_info:

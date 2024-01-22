@@ -48,7 +48,9 @@ class RepositoryInfoFetcher(GithubAPIFetcher):
             self._process_repo(repo, repositories_info)
         finally:
             thread_semaphore.release()
-            self.active_threads.remove(threading.current_thread())
+            current_thread = threading.current_thread()
+            if current_thread in self.active_threads:
+                self.active_threads.remove(current_thread)
 
     def _process_repo(self, repo: Repository, repositories_info: List[RepositoryInfo]) -> None:
         prs = super().get_pull_requests_for_repo(repo)
