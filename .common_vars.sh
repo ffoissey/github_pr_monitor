@@ -1,0 +1,16 @@
+APP_NAME="PR Monitor"
+
+APP_OUTPUT_NAME="github_pr_monitor"
+VENV_NAME="pyinstallerenv"
+PYINSTALLER_BUILD_DIR="build"
+PYINSTALLER_DIST_DIR="dist"
+APP_PATH="${PYINSTALLER_DIST_DIR}/${APP_OUTPUT_NAME}.app"
+
+# Colors
+RED="\033[31;1m"
+GREEN="\033[32;1m"
+YELLOW="\033[33;1m"
+BLUE="\033[34;1m"
+PURPLE="\033[35;1m"
+GREY="\033[37;1m"
+NC="\033[0;1m"
