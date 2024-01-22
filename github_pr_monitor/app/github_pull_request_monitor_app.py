@@ -9,7 +9,7 @@ from github import GithubException
 from rumps import rumps, MenuItem, separator
 
 from github_pr_monitor.app.repository_info_fetcher import RepositoryInfoFetcher
-from github_pr_monitor.configuration.config_manager import ConfigManager
+from github_pr_monitor.managers.config_manager import ConfigManager
 from github_pr_monitor.models.pull_request_info import PullRequestInfo
 from github_pr_monitor.security.keyring_manager import KeyringManager
 
@@ -43,7 +43,7 @@ class GithubPullRequestMonitorApp(rumps.App):
         super(GithubPullRequestMonitorApp, self).__init__(self.APP_NAME)
         self.config_manager = ConfigManager()
         self.keyring_manager = KeyringManager()
-        self.pull_request_processor = RepositoryInfoFetcher()
+        self.repository_info_fetcher = RepositoryInfoFetcher()
         self.menu_callbacks = self.setup_menu_callbacks()
         self.setting_submenu_callbacks = self.setup_settings_callbacks()
         self.repositories_info = []
@@ -86,16 +86,20 @@ class GithubPullRequestMonitorApp(rumps.App):
         self.menu[self.QUIT_MENU].title = "Quitting..."
         self.title = f"{self.APP_NAME} 👋 (Quitting)"
         self._disable_all_buttons()
-        self.pull_request_processor.set_abort_process_flag(True)
-        self.pull_request_processor.waiting_for_stop_processing()
+        self.repository_info_fetcher.set_abort_process_flag(True)
+        self.repository_info_fetcher.waiting_for_stop_processing()
         self.refresh_timer.stop()
         rumps.quit_application()
 
     def refresh(self, _=None):
-        self.pull_request_processor.set_abort_process_flag(True)
         self.processing_done = False
+        self.check_update_timer.stop()
+        self.repository_info_fetcher.set_abort_process_flag(True)
         with self.refresh_lock:
-            self.pull_request_processor.set_abort_process_flag(False)
+            self.repository_info_fetcher.set_abort_process_flag(False)
+            self.processing_done = False
+            self.invalid_pat = False
+            self.connection_error = False
             self._reset_menu()
             self._disable_button(self.REFRESH_MENU)
             self.menu.get(self.REFRESH_MENU).title = 'Refreshing… ⏳'
@@ -120,30 +124,24 @@ class GithubPullRequestMonitorApp(rumps.App):
         webbrowser.open(sender.url)
 
     def update_menu(self):
-        self.pull_request_processor.set_abort_process_flag(True)
-        self.invalid_pat = False
-        self.connection_error = False
-        with self.refresh_lock:
-            self.processing_done = False
-            self.pull_request_processor.set_abort_process_flag(False)
-            try:
-                self.repositories_info = self.pull_request_processor.get_repositories_info(
-                    self.keyring_manager.get_github_pat(), self.repo_search_filter)
-            except GithubException as e:
-                if e.status == http.HTTPStatus.UNAUTHORIZED:
-                    self.connection_error = True
-                    self.invalid_pat = True
-                logging.error(e.message or self.DEFAULT_ERROR)
-            except requests.exceptions.ConnectionError as e:
+        try:
+            self.repositories_info = self.repository_info_fetcher.get_repositories_info(
+                self.keyring_manager.get_github_pat(), self.repo_search_filter)
+        except GithubException as e:
+            if e.status == http.HTTPStatus.UNAUTHORIZED:
                 self.connection_error = True
-                logging.error(e or self.DEFAULT_ERROR)
-            except Exception as e:
-                logging.error(e or self.DEFAULT_ERROR)
+                self.invalid_pat = True
+            logging.error(e.message or self.DEFAULT_ERROR)
+        except requests.exceptions.ConnectionError as e:
+            self.connection_error = True
+            logging.error(e or self.DEFAULT_ERROR)
+        except Exception as e:
+            logging.error(e or self.DEFAULT_ERROR)
 
-            self.menu.get(self.REFRESH_MENU).title = self.REFRESH_MENU
-            if self.are_all_buttons_disabled is False:
-                self._enable_button(self.REFRESH_MENU)
-            self.processing_done = True
+        self.menu.get(self.REFRESH_MENU).title = self.REFRESH_MENU
+        if self.are_all_buttons_disabled is False:
+            self._enable_button(self.REFRESH_MENU)
+        self.processing_done = True
 
     def check_if_update_is_ready(self, _):
         if self.processing_done:
