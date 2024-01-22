@@ -13,12 +13,10 @@ from github_pr_monitor.models.pull_request_info import PullRequestInfo
 from github_pr_monitor.security.keyring_manager import KeyringManager
 
 
-# TODO: REMOVE FOR PRODUCTION
 # rumps.debug_mode(True)
 
 # TODO: NOTIFICATION WITH NUMBER OF PR TO REVIEW EACH HOUR
-# TODO: CHANGE APP ICON
-# TODO: CHECK PIP3 AND PIP INSTEAD OF JUST PIP
+# TODO: Log file
 
 class GithubPullRequestMonitorApp(rumps.App):
     APP_NAME: str = "PR Monitor"
