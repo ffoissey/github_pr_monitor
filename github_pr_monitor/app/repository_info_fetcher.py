@@ -5,8 +5,7 @@ from github.PullRequest import PullRequest
 from github.Repository import Repository
 
 from github_pr_monitor.app.github_api_fetcher import GithubAPIFetcher
-from github_pr_monitor.config import APPLICATION_MAX_THREADS
-from github_pr_monitor.managers.thread_manager import ThreadManager
+from github_pr_monitor.config import THREAD_MANAGER
 from github_pr_monitor.models.pull_request_info import PullRequestInfo
 from github_pr_monitor.models.repository_info import RepositoryInfo
 from github_pr_monitor.models.reviewers_info import ReviewersInfo
@@ -17,7 +16,7 @@ class RepositoryInfoFetcher(GithubAPIFetcher):
         super().__init__()
         self.abort_process = False
         self.prs_info_lock = threading.Lock()
-        self.thread_manager = ThreadManager(APPLICATION_MAX_THREADS)
+        self.thread_manager = THREAD_MANAGER
 
     def set_abort_process_flag(self, value: bool) -> None:
         self.abort_process = value
@@ -32,9 +31,6 @@ class RepositoryInfoFetcher(GithubAPIFetcher):
         finally:
             self.thread_manager.wait_for_all_threads()
         return sorted(repositories_info, key=lambda repository_info: repository_info.name)
-
-    def waiting_for_stop_processing(self) -> None:
-        self.thread_manager.wait_for_all_threads()
 
     def _process_repo(self, repo: Repository, repositories_info: List[RepositoryInfo]) -> None:
         if self.abort_process is True:

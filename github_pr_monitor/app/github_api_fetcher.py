@@ -1,6 +1,6 @@
 import logging
 from time import time
-from typing import List, Optional
+from typing import List, Optional, Any
 
 from github import Github, GithubException
 from github.Auth import Token
@@ -46,8 +46,8 @@ class GithubAPIFetcher:
             self.github = Github(auth=auth, pool_size=self.pool_size, per_page=100)
 
     def get_all_repositories(self, filter_keyword: str = None) -> List[Repository]:
-        cache_key = f"repos_{filter_keyword or 'all'}"
-        cached_repos = self._get_from_repositories_cache(cache_key)
+        cache_key = f"repos__{filter_keyword or 'all'}"
+        cached_repos = self._get_from_cache(cache_key)
 
         if cached_repos is not None:
             return cached_repos
@@ -57,17 +57,15 @@ class GithubAPIFetcher:
             if not filter_keyword or (filter_keyword.lower() in repo.name.lower()):
                 repos.append(repo)
 
-        self._add_to_repositories_cache(cache_key, repos)
+        self._add_to_cache(cache_key, repos)
         return repos
 
     def get_current_user_login(self) -> str:
         return self.github.get_user().login
 
-    @staticmethod
-    def get_reviewers_info(pull_request: PullRequest, current_user: str) -> Optional[ReviewersInfo]:
+    def get_reviewers_info(self, pull_request: PullRequest, current_user: str) -> Optional[ReviewersInfo]:
         try:
-            branch_required_reviews: RequiredPullRequestReviews = GithubAPIFetcher.get_branch_requested_reviewers(
-                pull_request)
+            branch_required_reviews: RequiredPullRequestReviews = self.get_branch_requested_reviewers(pull_request)
             reviews: PaginatedList[PullRequestReview] = pull_request.get_reviews()
 
             return ReviewersInfo(pull_request=pull_request, reviews=reviews,
@@ -76,15 +74,23 @@ class GithubAPIFetcher:
             logging.warning(f'Failed to fetch PR reviewers information for repository {pull_request.head.repo}: {e}')
             return None
 
-    @staticmethod
-    def get_branch_requested_reviewers(pull_request: PullRequest) -> Optional[RequiredPullRequestReviews]:
+    def get_branch_requested_reviewers(self, pull_request: PullRequest) -> Optional[RequiredPullRequestReviews]:
         branch_name: str = pull_request.base.ref
+        repo_name: str = pull_request.head.repo.name
+        cache_key = f"repo__{repo_name}__{branch_name}_branch_protection"
+
+        if self._is_cached(cache_key) is True:
+            return self._get_from_cache(cache_key)
+
+        required_pull_request_review: Optional[RequiredPullRequestReviews] = None
         try:
             branch: Branch = pull_request.head.repo.get_branch(branch_name)
-            return branch.get_required_pull_request_reviews()
+            required_pull_request_review = branch.get_required_pull_request_reviews()
         except GithubException as e:
-            logging.info(f'Failed to fetch branch protection information for repo "{pull_request.head.repo}" on branch "{branch_name}": {e}')
-            return None
+            logging.info(f'Failed to fetch branch protection information for repo "{repo_name}" on branch "{branch_name}": {e}')
+
+        self._add_to_cache(cache_key, required_pull_request_review)
+        return required_pull_request_review
 
     @staticmethod
     def get_pull_requests_for_repo(repository: Repository) -> PaginatedList[PullRequest]:
@@ -95,16 +101,19 @@ class GithubAPIFetcher:
             self.github.close()
             self.github = None
 
-    def _get_from_repositories_cache(self, key) -> Optional[List[Repository]]:
+    def _get_from_cache(self, key) -> Optional[Any]:
         cached_data = self.cache.get(key)
         if cached_data:
             data, timestamp = cached_data
             if time() - timestamp < self.cache_expiry:
                 return data
             else:
-                logging.info(f'Remove key "{key}" from repositories cache')
+                logging.info(f'Remove key "{key}" from cache')
         return None
 
-    def _add_to_repositories_cache(self, key, data) -> None:
+    def _add_to_cache(self, key, data) -> None:
         self.cache[key] = (data, time())
-        logging.info(f'Add key "{key}" to repositories cache')
+        logging.info(f'Add key "{key}" to cache')
+
+    def _is_cached(self, key):
+        return key in self.cache
