@@ -19,7 +19,8 @@ from github_pr_monitor.security.keyring_manager import KeyringManager
 
 # TODO: NOTIFICATION WITH NUMBER OF PR TO REVIEW EACH HOUR
 # TODO: Log file
-# TODO: foreground message console
+# TODO: Foreground message console
+# TODO: Clear cache if force refresh
 
 class GithubPullRequestMonitorApp(rumps.App):
     APP_NAME: str = "PR Monitor"

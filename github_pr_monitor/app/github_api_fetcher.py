@@ -108,6 +108,7 @@ class GithubAPIFetcher:
             if time() - timestamp < self.cache_expiry:
                 return data
             else:
+                del self.cache[key]
                 logging.info(f'Remove key "{key}" from cache')
         return None
 
