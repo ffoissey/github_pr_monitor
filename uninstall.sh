@@ -22,5 +22,6 @@ rm -Rf "${VENV_NAME}"
 rm -Rf "${PYINSTALLER_BUILD_DIR}"
 rm -Rf "${PYINSTALLER_DIST_DIR}"
 
+echo
 echo -e "${GREEN}Uninstallation completed.${NC}"
 echo

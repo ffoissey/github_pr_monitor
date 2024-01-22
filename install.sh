@@ -74,5 +74,6 @@ else
     echo -e "${PURPLE}You can launch the application later by running 'open ${APP_PATH}'.${NC}"
 fi
 
+echo
 echo -e "${GREEN}Setup process completed.${NC}"
 echo
