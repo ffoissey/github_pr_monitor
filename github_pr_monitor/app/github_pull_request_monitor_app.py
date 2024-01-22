@@ -17,6 +17,8 @@ from github_pr_monitor.security.keyring_manager import KeyringManager
 
 # TODO: NOTIFICATION WITH NUMBER OF PR TO REVIEW EACH HOUR
 # TODO: Log file
+# TODO: Add icons when it's own pr
+# TODO: verify if we are in reviewer list and if we are in mandoatory (or directly mandatory)
 
 class GithubPullRequestMonitorApp(rumps.App):
     APP_NAME: str = "PR Monitor"
@@ -174,7 +176,9 @@ class GithubPullRequestMonitorApp(rumps.App):
 
     @staticmethod
     def _format_pr_title(pr_info: PullRequestInfo):
-        return f"{pr_info.status} ({pr_info.reviewers_info.number_of_reviews}👁️) " \
+        return f"{'❗️' if pr_info.reviewers_info.is_mandatory else ''}" \
+               f"{pr_info.status}{'👤' if pr_info.is_author else ''} " \
+               f"({pr_info.reviewers_info.number_of_reviews}👁️) " \
                f"[{pr_info.reviewers_info.number_of_completed_reviews} " \
                f"/ {pr_info.reviewers_info.number_of_requested_reviewers}] " \
                f"➤ {pr_info.title}"

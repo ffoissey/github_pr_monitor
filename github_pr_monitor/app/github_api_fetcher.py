@@ -3,9 +3,13 @@ from typing import List, Optional
 
 from github import Github, GithubException
 from github.Auth import Token
+from github.Branch import Branch
+from github.BranchProtection import BranchProtection
 from github.PaginatedList import PaginatedList
 from github.PullRequest import PullRequest
+from github.PullRequestReview import PullRequestReview
 from github.Repository import Repository
+from github.RequiredPullRequestReviews import RequiredPullRequestReviews
 
 from github_pr_monitor.models.reviewers_info import ReviewersInfo
 
@@ -55,49 +59,30 @@ class GithubAPIFetcher:
     def get_current_user_login(self) -> str:
         return self.github.get_user().login
 
-    def get_branch_requested_reviewers(self, owner: str, repo: str, branch: str) -> int:
+    def get_branch_requested_reviewers(self, pull_request: PullRequest):
+        branch_name: str = pull_request.base.ref
+        mandatory_reviewers = []
+        required_reviewers = 0
         try:
-            repository = self.github.get_repo(f"{owner}/{repo}")
-            branch = repository.get_branch(branch)
-            protection = branch.get_protection().required_pull_request_reviews
-            required_reviewers = protection.required_approving_review_count if protection else 0
-            return required_reviewers
+            branch: Branch = pull_request.head.repo.get_branch(branch_name)
+            branch_protection: BranchProtection = branch.get_protection()
+            branch_required_pull_request_reviews: RequiredPullRequestReviews = branch_protection.required_pull_request_reviews
+            return branch_required_pull_request_reviews
         except GithubException as e:
-            logging.warning(f'Failed to fetch branch protection information for {branch}: {e}')
-            return 0
+            logging.warning(f'Failed to fetch branch protection information for {branch_name}: {e}')
+        return required_reviewers, mandatory_reviewers
 
-    def get_pull_requests_for_repo(self, owner: str, repo: str) -> PaginatedList[PullRequest]:
-        repository = self.github.get_repo(f"{owner}/{repo}")
+    def get_pull_requests_for_repo(self, repository: Repository) -> PaginatedList[PullRequest]:
         return repository.get_pulls(state='open', sort='created')
 
-    def get_reviewers_info(self, owner: str, repo: str, id: int, base_branch: str) -> Optional[ReviewersInfo]:
+    def get_reviewers_info(self, pull_request: PullRequest, current_user: str) -> Optional[ReviewersInfo]:
         try:
-            repository = self.github.get_repo(f"{owner}/{repo}")
-            pull_request = repository.get_pull(id)
+            branch_required_reviews: RequiredPullRequestReviews = self.get_branch_requested_reviewers(pull_request)
+            reviews: PaginatedList[PullRequestReview] = pull_request.get_reviews()
 
-            reviews = pull_request.get_reviews()
-            requested_reviewers = pull_request.get_review_requests()[0]
-
-            current_user = self.get_current_user_login()
-            has_current_user_reviewed = any(review.user.login == current_user for review in reviews)
-            has_current_user_requested = any(
-                review.user.login == current_user and review.state == 'CHANGES_REQUESTED' for review in reviews)
-            review_statuses = {review.user.login: review.state for review in reviews}
-            number_of_reviews = len(set(review_statuses.keys()))
-            number_of_completed_reviews = len(
-                set([review.user.login for review in reviews if review.state == 'APPROVED']))
-            number_of_branch_requested_reviewers = self.get_branch_requested_reviewers(owner, repo, base_branch)
-            number_of_requested_reviewers = max(requested_reviewers.totalCount, number_of_branch_requested_reviewers)
-
-            return ReviewersInfo(
-                number_of_reviews=number_of_reviews,
-                number_of_completed_reviews=number_of_completed_reviews,
-                number_of_requested_reviewers=number_of_requested_reviewers,
-                has_current_user_reviewed=has_current_user_reviewed,
-                has_current_user_requested=has_current_user_requested
-            )
+            return ReviewersInfo(pull_request=pull_request, reviews=reviews, branch_required_reviews=branch_required_reviews, current_user=current_user)
         except GithubException as e:
-            logging.warning(f'Failed to fetch PR reviewers information for repository {repo}: {e}')
+            logging.warning(f'Failed to fetch PR reviewers information for repository {pull_request.head.repo}: {e}')
             return None
 
     def _adjust_connection_pool_size(self, min_needed: int):
