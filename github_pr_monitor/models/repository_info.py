@@ -10,18 +10,21 @@ class RepositoryInfo:
         self.status, self.is_urgent = self._get_highest_priority_status()
 
     def _get_highest_priority_status(self):
-        priority_order = ['🔴', '💬', '🟡', '🟢', '⚪']
-        default_status = priority_order[-1]
-        highest_status = default_status
+        pr_repo_status_mapping = {
+            '🔴': '🔴',
+            '💬': '🟠',
+            '🟡': '🟡',
+            '✅': '🟢',
+            '📃': '⚪'
+        }
+        priority_order = ['🔴', '💬', '🟡', '✅', '📃']
+        current_priority = priority_order[-1]
+        mandatory = ''
         is_urgent = False
-
         for pr in self.pull_requests_info:
-            pr_status = pr.status if pr else default_status
-            if pr_status in priority_order:
-                is_current_higher_priority = priority_order.index(pr_status) < priority_order.index(highest_status)
-                if is_current_higher_priority:
-                    highest_status = pr_status
-                    is_urgent = pr_status in ['🔴', '💬']
-                    if pr_status == '🔴':
-                        break
-        return highest_status, is_urgent
+            if priority_order.index(pr.status) < priority_order.index(current_priority):
+                current_priority = pr.status
+                is_urgent = pr.status in ['🔴', '💬']
+                if pr.reviewers_info.is_mandatory:
+                    mandatory = '❗️'
+        return mandatory + pr_repo_status_mapping[current_priority], is_urgent

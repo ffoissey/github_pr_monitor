@@ -38,7 +38,7 @@ class ConfigManager:
             with open(self.config_path, 'r') as config_file:
                 return json.load(config_file)
         except FileNotFoundError as e:
-            logging.warning(f'Error while loading config file: {e}')
+            logging.warning(f'Error while loading configuration file: {e}')
             return {}
 
     def _save_config(self):

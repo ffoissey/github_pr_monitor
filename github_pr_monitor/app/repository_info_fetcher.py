@@ -5,6 +5,7 @@ from github.PullRequest import PullRequest
 from github.Repository import Repository
 
 from github_pr_monitor.app.github_api_fetcher import GithubAPIFetcher
+from github_pr_monitor.config import APPLICATION_MAX_THREADS
 from github_pr_monitor.models.pull_request_info import PullRequestInfo
 from github_pr_monitor.models.repository_info import RepositoryInfo
 from github_pr_monitor.models.reviewers_info import ReviewersInfo
@@ -23,25 +24,36 @@ class RepositoryInfoFetcher(GithubAPIFetcher):
     def waiting_for_stop_processing(self) -> None:
         for thread in self.active_threads:
             thread.join()
+        self.active_threads.clear()
 
     def get_repositories_info(self, github_pat: str, repo_search_filter: Optional[str]) -> List[RepositoryInfo]:
+        thread_semaphore = threading.Semaphore(APPLICATION_MAX_THREADS)
+
         super().open_github_connection(github_pat)
         repositories_info: List[RepositoryInfo] = []
         try:
             repositories: List[Repository] = super().get_all_repositories(repo_search_filter)
             for repo in repositories:
-                thread = threading.Thread(target=self._process_repo, args=(repo, repositories_info))
+                thread_semaphore.acquire()
+                thread = threading.Thread(target=self._process_repo_and_release,
+                                          args=(repo, repositories_info, thread_semaphore))
                 self.active_threads.append(thread)
                 thread.start()
-
-            self.waiting_for_stop_processing()
         finally:
-            self.active_threads.clear()
+            self.waiting_for_stop_processing()
         return sorted(repositories_info, key=lambda repository_info: repository_info.name)
+
+    def _process_repo_and_release(self, repo, repositories_info, thread_semaphore):
+        try:
+            self._process_repo(repo, repositories_info)
+        finally:
+            thread_semaphore.release()
+            self.active_threads.remove(threading.current_thread())
 
     def _process_repo(self, repo: Repository, repositories_info: List[RepositoryInfo]) -> None:
         prs = super().get_pull_requests_for_repo(repo)
-        pull_requests_info: List[PullRequestInfo] = [self._format_pr_info(pr) for pr in prs]
+        pull_requests_info: List[PullRequestInfo] = list(filter(lambda pr: pr is not None,
+                                                                [self._format_pr_info(pr) for pr in prs]))
         pull_requests_info = sorted(pull_requests_info, key=lambda pull_request_info: pull_request_info.id)
         with self.prs_info_lock:
             repositories_info.append(RepositoryInfo(name=repo.name, pull_requests_info=pull_requests_info))

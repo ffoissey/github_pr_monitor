@@ -4,11 +4,12 @@ import threading
 import webbrowser
 from typing import Optional, List, Callable, Any
 
+import requests
 from github import GithubException
 from rumps import rumps, MenuItem, separator
 
 from github_pr_monitor.app.repository_info_fetcher import RepositoryInfoFetcher
-from github_pr_monitor.config.config_manager import ConfigManager
+from github_pr_monitor.configuration.config_manager import ConfigManager
 from github_pr_monitor.models.pull_request_info import PullRequestInfo
 from github_pr_monitor.security.keyring_manager import KeyringManager
 
@@ -17,8 +18,7 @@ from github_pr_monitor.security.keyring_manager import KeyringManager
 
 # TODO: NOTIFICATION WITH NUMBER OF PR TO REVIEW EACH HOUR
 # TODO: Log file
-# TODO: Add icons when it's own pr
-# TODO: verify if we are in reviewer list and if we are in mandoatory (or directly mandatory)
+# TODO: foreground message console
 
 class GithubPullRequestMonitorApp(rumps.App):
     APP_NAME: str = "PR Monitor"
@@ -27,14 +27,16 @@ class GithubPullRequestMonitorApp(rumps.App):
     SETTINGS_MENU: str = "Settings"
     QUIT_MENU: str = "Quit"
 
+    DEFAULT_ERROR: str = "Unexpected Error"
+
     PAT_SETTING_MENU: str = "Github Personal Access Token"
     REPOSITORY_FILTER_SETTING_MENU: str = "Repository Search Filter"
     REFRESH_DELAY_SETTING_MENU: str = "Refresh Delay"
 
-    DIALOG_HEIGHT: int = 30
-    DIALOG_WIDTH: int = 400
+    DIALOG_HEIGHT: int = 25
+    DIALOG_WIDTH: int = 500
 
-    DEFAULT_REFRESH_DELAY: int = 600
+    DEFAULT_REFRESH_DELAY: int = 300
     UPDATE_CHECKER_DELAY: int = 1
 
     def __init__(self, repo_search_filter: Optional[str] = None, ask_pat: Optional[bool] = False):
@@ -48,6 +50,7 @@ class GithubPullRequestMonitorApp(rumps.App):
         self.are_all_buttons_disabled = False
         self.processing_done = True
         self.invalid_pat = False
+        self.connection_error = False
         self.refresh_lock = threading.Lock()
 
         # Settings init
@@ -91,7 +94,6 @@ class GithubPullRequestMonitorApp(rumps.App):
     def refresh(self, _=None):
         self.pull_request_processor.set_abort_process_flag(True)
         self.processing_done = False
-        self.invalid_pat = False
         with self.refresh_lock:
             self.pull_request_processor.set_abort_process_flag(False)
             self._reset_menu()
@@ -120,6 +122,7 @@ class GithubPullRequestMonitorApp(rumps.App):
     def update_menu(self):
         self.pull_request_processor.set_abort_process_flag(True)
         self.invalid_pat = False
+        self.connection_error = False
         with self.refresh_lock:
             self.processing_done = False
             self.pull_request_processor.set_abort_process_flag(False)
@@ -128,10 +131,14 @@ class GithubPullRequestMonitorApp(rumps.App):
                     self.keyring_manager.get_github_pat(), self.repo_search_filter)
             except GithubException as e:
                 if e.status == http.HTTPStatus.UNAUTHORIZED:
+                    self.connection_error = True
                     self.invalid_pat = True
-                logging.error(e.message or "Unexpected Error")
+                logging.error(e.message or self.DEFAULT_ERROR)
+            except requests.exceptions.ConnectionError as e:
+                self.connection_error = True
+                logging.error(e or self.DEFAULT_ERROR)
             except Exception as e:
-                logging.error(e or "Unexpected Error")
+                logging.error(e or self.DEFAULT_ERROR)
 
             self.menu.get(self.REFRESH_MENU).title = self.REFRESH_MENU
             if self.are_all_buttons_disabled is False:
@@ -146,8 +153,12 @@ class GithubPullRequestMonitorApp(rumps.App):
 
     def _update_repositories(self):
         self.title = self.APP_NAME
-        if self.invalid_pat is True:
-            self.title += ' ⚠️ (Invalid PAT)'
+        if self.connection_error is True:
+            self.title += ' ⚠️'
+            if self.invalid_pat is True:
+                self.title += ' (Invalid PAT)'
+            else:
+                self.title += ' (Network Error)'
             return
 
         self.menu.add(separator)
@@ -165,23 +176,14 @@ class GithubPullRequestMonitorApp(rumps.App):
 
     def _update_pull_requests(self, submenu: MenuItem, prs_info: List[PullRequestInfo]):
         for pr_info in prs_info:
-            title: str = self._format_pr_title(pr_info)
-            item = submenu.get(title)
+            title: str = pr_info.format_pr_title()
+            item = submenu.get(pr_info.format_pr_title())
             if item is None:
                 item = MenuItem(title=title, callback=self.on_pr_click)
                 item.set_callback(self.on_pr_click)
                 item.url = pr_info.url
                 submenu.add(item)
             item.title = title
-
-    @staticmethod
-    def _format_pr_title(pr_info: PullRequestInfo):
-        return f"{'❗️' if pr_info.reviewers_info.is_mandatory else ''}" \
-               f"{pr_info.status}{'👤' if pr_info.is_author else ''} " \
-               f"({pr_info.reviewers_info.number_of_reviews}👁️) " \
-               f"[{pr_info.reviewers_info.number_of_completed_reviews} " \
-               f"/ {pr_info.reviewers_info.number_of_requested_reviewers}] " \
-               f"➤ {pr_info.title}"
 
     def _set_repo_search_filter(self, repo_search_filter: str):
         self.repo_search_filter = repo_search_filter.lower() if repo_search_filter != '' else None

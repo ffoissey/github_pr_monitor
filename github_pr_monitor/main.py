@@ -1,9 +1,5 @@
 import argparse
-import logging
-
 from github_pr_monitor.app.github_pull_request_monitor_app import GithubPullRequestMonitorApp
-
-logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Fetch GitHub PRs for repositories matching a keyword.")
