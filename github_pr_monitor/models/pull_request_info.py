@@ -12,8 +12,8 @@ class PullRequestInfo:
         self.is_author = is_author
 
     def format_pr_title(self):
-        return f"{'❗️' if self.reviewers_info.is_mandatory else ''}" \
-               f"{self.status}{'👤' if self.is_author else ''}\t" \
+        return f"{'❗️' if self.reviewers_info.is_mandatory else ' '}" \
+               f"{self.status}{'👤' if self.is_author else ' '}\t" \
                f"({self.reviewers_info.number_of_reviews}👁️)" \
                f"[{self.reviewers_info.number_of_completed_reviews} " \
                f"/ {self.reviewers_info.number_of_requested_reviewers}]\t➤\t" \

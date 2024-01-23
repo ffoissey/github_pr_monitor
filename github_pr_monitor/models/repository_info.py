@@ -19,7 +19,7 @@ class RepositoryInfo:
         }
         priority_order = ['🔴', '💬', '🟡', '✅', '📃']
         current_priority = priority_order[-1]
-        mandatory = ''
+        mandatory = '  '
         is_urgent = False
         for pr in self.pull_requests_info:
             if priority_order.index(pr.status) < priority_order.index(current_priority):
