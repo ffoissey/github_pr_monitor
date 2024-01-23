@@ -1,0 +1,21 @@
+NOTIFICATION_EMOJI: str = '🔔'
+NOTHING_TO_DO_EMOJI: str = '☑️'
+NO_PR_EMOJI: str = '😴'
+ERROR_EMOJI: str = '⚠️'
+IN_PROGRESS_EMOJI: str = '⏳'
+QUITTING_EMOJI: str = '👋'
+
+AUTHOR_EMOJI: str = '👤'
+REVIEWER_EMOJI: str = '👁️'
+
+PR_URGENT_EMOJI: str = '🔴'
+PR_COMMENT_EMOJI: str = '💬'
+PR_IMPORTANT_EMOJI: str = '🟡'
+PR_OK_EMOJI: str = '✅'
+PR_DRAFT_EMOJI: str = '📃'
+
+REPO_WITH_PR_URGENT_EMOJI: str = '🔴'
+REPO_WITH_PR_COMMENT_EMOJI: str = '🟠'
+REPO_WITH_PR_IMPORTANT_EMOJI: str = '🟡'
+REPO_WITH_PR_OK_EMOJI: str = '🟢'
+REPO_WITH_PR_DRAFT_EMOJI: str = '⚪'

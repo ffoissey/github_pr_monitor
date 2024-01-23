@@ -7,8 +7,8 @@ from github.RequiredPullRequestReviews import RequiredPullRequestReviews
 
 
 class ReviewersInfo:
-    CHANGED_REQUESTED = 'CHANGES_REQUESTED'
-    APPROVED = 'APPROVED'
+    CHANGED_REQUESTED: str = 'CHANGES_REQUESTED'
+    APPROVED: str = 'APPROVED'
 
     def __init__(self, pull_request: PullRequest, reviews: PaginatedList[PullRequestReview],
                  branch_required_reviews: Optional[RequiredPullRequestReviews], current_user: str):

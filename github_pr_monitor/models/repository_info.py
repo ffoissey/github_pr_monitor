@@ -1,5 +1,7 @@
 from typing import List
 
+from github_pr_monitor.constants.app_setting_constants import PR_REPO_STATUS_MAPPING, PR_PRIORITY_ORDER
+from github_pr_monitor.constants.emojis import PR_URGENT_EMOJI, PR_COMMENT_EMOJI
 from github_pr_monitor.models.pull_request_info import PullRequestInfo
 
 
@@ -9,22 +11,14 @@ class RepositoryInfo:
         self.pull_requests_info = pull_requests_info
         self.status, self.is_urgent = self._get_highest_priority_status()
 
+    def format_repo_title(self):
+        return f"{self.status} {self.name}"
+
     def _get_highest_priority_status(self):
-        pr_repo_status_mapping = {
-            '🔴': '🔴',
-            '💬': '🟠',
-            '🟡': '🟡',
-            '✅': '🟢',
-            '📃': '⚪'
-        }
-        priority_order = ['🔴', '💬', '🟡', '✅', '📃']
-        current_priority = priority_order[-1]
-        mandatory = '  '
+        current_priority = PR_PRIORITY_ORDER[-1]
         is_urgent = False
         for pr in self.pull_requests_info:
-            if priority_order.index(pr.status) < priority_order.index(current_priority):
+            if PR_PRIORITY_ORDER.index(pr.status) < PR_PRIORITY_ORDER.index(current_priority):
                 current_priority = pr.status
-                is_urgent = pr.status in ['🔴', '💬']
-                if pr.reviewers_info.is_mandatory:
-                    mandatory = '❗️'
-        return mandatory + pr_repo_status_mapping[current_priority], is_urgent
+                is_urgent = pr.status in [PR_URGENT_EMOJI, PR_COMMENT_EMOJI]
+        return PR_REPO_STATUS_MAPPING[current_priority], is_urgent

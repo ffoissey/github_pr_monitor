@@ -10,8 +10,16 @@ from rumps import rumps, MenuItem, separator
 
 from github_pr_monitor.app.repository_info_fetcher import RepositoryInfoFetcher
 from github_pr_monitor.config import THREAD_MANAGER
+from github_pr_monitor.constants.app_setting_constants import DIALOG_WIDTH, DIALOG_HEIGHT, DEFAULT_REFRESH_DELAY, \
+    UPDATE_CHECKER_DELAY
+from github_pr_monitor.constants.display_constants import REFRESH_MENU, SETTINGS_MENU, QUIT_MENU, PAT_SETTING_MENU, \
+    REPOSITORY_FILTER_SETTING_MENU, REFRESH_DELAY_SETTING_MENU, INVALID_PAT_MSG, NETWORK_ERROR_MSG, DEFAULT_ERROR, \
+    QUITTING, APP_QUITTING, APP_NAME, REFRESHING
+from github_pr_monitor.constants.emojis import NOTIFICATION_EMOJI, NOTHING_TO_DO_EMOJI, NO_PR_EMOJI, ERROR_EMOJI, \
+    IN_PROGRESS_EMOJI
 from github_pr_monitor.managers.config_manager import ConfigManager
 from github_pr_monitor.models.pull_request_info import PullRequestInfo
+from github_pr_monitor.models.repository_info import RepositoryInfo
 from github_pr_monitor.security.keyring_manager import KeyringManager
 
 
@@ -23,33 +31,16 @@ from github_pr_monitor.security.keyring_manager import KeyringManager
 # TODO: Clear cache if force refresh
 
 class GithubPullRequestMonitorApp(rumps.App):
-    APP_NAME: str = "PR Monitor"
-
-    REFRESH_MENU: str = "Force Refresh"
-    SETTINGS_MENU: str = "Settings"
-    QUIT_MENU: str = "Quit"
-
-    DEFAULT_ERROR: str = "Unexpected Error"
-
-    PAT_SETTING_MENU: str = "Github Personal Access Token"
-    REPOSITORY_FILTER_SETTING_MENU: str = "Repository Search Filter"
-    REFRESH_DELAY_SETTING_MENU: str = "Refresh Delay"
-
-    DIALOG_HEIGHT: int = 25
-    DIALOG_WIDTH: int = 500
-
-    DEFAULT_REFRESH_DELAY: int = 300
-    UPDATE_CHECKER_DELAY: int = 1
 
     def __init__(self, repo_search_filter: Optional[str] = None, ask_pat: Optional[bool] = False):
-        super(GithubPullRequestMonitorApp, self).__init__(self.APP_NAME)
+        super(GithubPullRequestMonitorApp, self).__init__(APP_NAME)
         self.config_manager = ConfigManager()
         self.keyring_manager = KeyringManager()
         self.repository_info_fetcher = RepositoryInfoFetcher()
         self.menu_callbacks = self._setup_menu_callbacks()
         self.setting_submenu_callbacks = self._setup_settings_callbacks()
         self.thread_manager = THREAD_MANAGER
-        self.repositories_info = []
+        self.repositories_info: List[RepositoryInfo] = []
         self.are_all_buttons_disabled = False
         self.processing_done = True
         self.invalid_pat = False
@@ -60,10 +51,10 @@ class GithubPullRequestMonitorApp(rumps.App):
         self.repo_search_filter = repo_search_filter or self.config_manager.get_repo_search_filter()
         if ask_pat is True or self.keyring_manager.get_github_pat() is None:
             self.ask_for_github_pat()
-        self.refresh_delay = self.config_manager.get_refresh_time() or self.DEFAULT_REFRESH_DELAY
+        self.refresh_delay = self.config_manager.get_refresh_time() or DEFAULT_REFRESH_DELAY
 
         # Timers init
-        self.check_update_timer = rumps.Timer(self._check_if_update_is_ready, self.UPDATE_CHECKER_DELAY)
+        self.check_update_timer = rumps.Timer(self._check_if_update_is_ready, UPDATE_CHECKER_DELAY)
         self.refresh_timer = rumps.Timer(self.refresh, self.refresh_delay)
 
         self.refresh_timer.start()
@@ -79,9 +70,9 @@ class GithubPullRequestMonitorApp(rumps.App):
             self.invalid_pat = False
             self.connection_error = False
             self._reset_menu()
-            self._disable_button(self.REFRESH_MENU)
-            self.menu.get(self.REFRESH_MENU).title = 'Refreshing… ⏳'
-            self.title = f'{self.APP_NAME} ⏳'
+            self._disable_button(REFRESH_MENU)
+            self.menu.get(REFRESH_MENU).title = REFRESHING
+            self.title = f'{APP_NAME} {IN_PROGRESS_EMOJI}'
             self.thread_manager.start_thread(self._fetch_repositories_info, daemon=True)
         self.check_update_timer.start()
 
@@ -105,16 +96,16 @@ class GithubPullRequestMonitorApp(rumps.App):
 
     def _setup_menu_callbacks(self):
         return {
-            self.REFRESH_MENU: self.refresh,
-            self.SETTINGS_MENU: None,
-            self.QUIT_MENU: self.quit
+            REFRESH_MENU: self.refresh,
+            SETTINGS_MENU: None,
+            QUIT_MENU: self.quit
         }
 
     def _setup_settings_callbacks(self):
         return {
-            self.PAT_SETTING_MENU: self.ask_for_github_pat,
-            self.REPOSITORY_FILTER_SETTING_MENU: self.ask_for_repository_search_filter,
-            self.REFRESH_DELAY_SETTING_MENU: self.ask_for_refresh_delay
+            PAT_SETTING_MENU: self.ask_for_github_pat,
+            REPOSITORY_FILTER_SETTING_MENU: self.ask_for_repository_search_filter,
+            REFRESH_DELAY_SETTING_MENU: self.ask_for_refresh_delay
         }
 
     @staticmethod
@@ -141,17 +132,16 @@ class GithubPullRequestMonitorApp(rumps.App):
         is_urgent, has_no_pr = self._populate_menu_with_repos()
 
         if is_urgent is True:
-            self.title += ' 🔔'
+            self.title += NOTIFICATION_EMOJI
         elif has_no_pr is True:
-            self.title += ' 😴'
+            self.title += NO_PR_EMOJI
         else:
-            self.title += ' ☑️'
+            self.title += NOTHING_TO_DO_EMOJI
 
     def _set_title_based_on_connection_status(self):
-        self.title = self.APP_NAME
+        self.title = APP_NAME + ' '
         if self.connection_error:
-            error_message = ' (Invalid PAT)' if self.invalid_pat else ' (Network Error)'
-            self.title += f' ⚠️{error_message}'
+            self.title += f'{ERROR_EMOJI}️ {INVALID_PAT_MSG if self.invalid_pat else NETWORK_ERROR_MSG}'
 
     def _populate_menu_with_repos(self):
         is_urgent = False
@@ -159,30 +149,29 @@ class GithubPullRequestMonitorApp(rumps.App):
         for repository_info in self.repositories_info:
             if repository_info.pull_requests_info:
                 has_no_pr = False
-                submenu = MenuItem(f"{repository_info.status} {repository_info.name}")
+                title: str = repository_info.format_repo_title()
+                submenu = MenuItem(title)
                 self.menu.add(submenu)
                 self._update_pull_requests(submenu, repository_info.pull_requests_info)
-                is_urgent |= repository_info.is_urgent
+                is_urgent = repository_info.is_urgent
         return is_urgent, has_no_pr
 
     def _update_pull_requests(self, submenu: MenuItem, prs_info: List[PullRequestInfo]):
         for pr_info in prs_info:
             title: str = pr_info.format_pr_title()
-            item = submenu.get(pr_info.format_pr_title())
-            if item is None:
-                item = MenuItem(title=title, callback=self._on_pr_click)
-                item.set_callback(self._on_pr_click)
-                item.url = pr_info.url
-                submenu.add(item)
-            item.title = title
+            item = MenuItem(title, callback=self._on_pr_click)
+            item.set_callback(self._on_pr_click)
+            item.url = pr_info.url
+            submenu.add(item)
 
     def _reset_menu(self):
         self.menu.clear()
-        settings_menu = MenuItem(self.SETTINGS_MENU)
+        self.title = APP_NAME
+        settings_menu = MenuItem(SETTINGS_MENU)
         for title, callback in self.setting_submenu_callbacks.items():
             settings_menu.add(MenuItem(title=title, callback=callback))
         for title, callback in self.menu_callbacks.items():
-            if title == self.SETTINGS_MENU:
+            if title == SETTINGS_MENU:
                 self.menu.add(settings_menu)
             else:
                 self.menu.add(MenuItem(title=title, callback=callback))
@@ -197,16 +186,16 @@ class GithubPullRequestMonitorApp(rumps.App):
             if e.status == http.HTTPStatus.UNAUTHORIZED:
                 self.connection_error = True
                 self.invalid_pat = True
-            logging.error(e.message or self.DEFAULT_ERROR)
+            logging.error(e.message or DEFAULT_ERROR)
         except requests.exceptions.ConnectionError as e:
             self.connection_error = True
-            logging.error(e or self.DEFAULT_ERROR)
+            logging.error(e or DEFAULT_ERROR)
         except Exception as e:
-            logging.error(e or self.DEFAULT_ERROR)
+            logging.error(e or DEFAULT_ERROR)
 
-        self.menu.get(self.REFRESH_MENU).title = self.REFRESH_MENU
+        self.menu.get(REFRESH_MENU).title = REFRESH_MENU
         if self.are_all_buttons_disabled is False:
-            self._enable_button(self.REFRESH_MENU)
+            self._enable_button(REFRESH_MENU)
         self.processing_done = True
 
     # Configuration Setters
@@ -240,7 +229,7 @@ class GithubPullRequestMonitorApp(rumps.App):
             ok="Submit",
             cancel="Cancel",
             secure=secure,
-            dimensions=(self.DIALOG_WIDTH, self.DIALOG_HEIGHT)
+            dimensions=(DIALOG_WIDTH, DIALOG_HEIGHT)
         ).run()
         if response.clicked:
             value: str = response.text.strip()
@@ -275,8 +264,8 @@ class GithubPullRequestMonitorApp(rumps.App):
         self.refresh_timer.stop()
 
     def _update_ui_for_quitting(self):
-        self.menu[self.QUIT_MENU].title = "Quitting..."
-        self.title = f"{self.APP_NAME} 👋 (Quitting)"
+        self.menu[QUIT_MENU].title = QUITTING
+        self.title = APP_QUITTING
         self._disable_all_buttons()
 
     def _quit_application(self):
