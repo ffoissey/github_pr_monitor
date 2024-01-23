@@ -14,7 +14,7 @@ class PullRequestInfo:
         self.reviewers_info = reviewers_info
         self.is_author = is_author
 
-    def format_pr_title(self):
+    def format_pr_title(self) -> str:
         status: str = f"{self.status}{AUTHOR_EMOJI if self.is_author else '     '} "
         reviewers: str = f"({self.reviewers_info.number_of_reviews}{REVIEWER_EMOJI}️) " \
                          f"[{self.reviewers_info.number_of_completed_reviews} " \

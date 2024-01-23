@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 from github.PaginatedList import PaginatedList
 from github.PullRequest import PullRequest
@@ -26,7 +26,7 @@ class ReviewersInfo:
         self.number_of_requested_reviewers = self._get_number_of_requested_reviewers()
         self.is_mandatory = current_user in self.mandatory_reviewers
 
-    def _get_mandatory_reviewers(self):
+    def _get_mandatory_reviewers(self) -> List[str]:
         mandatory_reviewers = set()
 
         if self.branch_required_reviews is not None and self.branch_required_reviews.dismissal_users is not None:
@@ -36,18 +36,18 @@ class ReviewersInfo:
             mandatory_reviewers.add(self.pull_request.user.login)
 
         mandatory_reviewers.update(request.login for request in self.pull_request.get_review_requests()[0])
-        return mandatory_reviewers
+        return list(mandatory_reviewers)
 
-    def _has_user_reviewed(self):
+    def _has_user_reviewed(self) -> bool:
         return any(review.user.login == self.current_user for review in self.reviews)
 
-    def _has_user_requested_changes(self):
+    def _has_user_requested_changes(self) -> bool:
         return any(review.user.login == self.current_user and review.state == self.CHANGED_REQUESTED
                    for review in self.reviews)
 
-    def _get_review_statuses(self):
+    def _get_review_statuses(self) -> Dict[str, str]:
         return {review.user.login: review.state for review in self.reviews}
 
-    def _get_number_of_requested_reviewers(self):
+    def _get_number_of_requested_reviewers(self) -> int:
         branch_count = self.branch_required_reviews.required_approving_review_count if self.branch_required_reviews else 0
         return max(len(self.pull_request.requested_reviewers), branch_count)

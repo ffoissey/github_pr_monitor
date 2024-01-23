@@ -116,5 +116,5 @@ class GithubAPIFetcher:
         self.cache[key] = (data, time())
         logging.info(f'Add key "{key}" to cache')
 
-    def _is_cached(self, key):
+    def _is_cached(self, key) -> bool:
         return key in self.cache
