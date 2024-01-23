@@ -21,7 +21,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='github_pr_monitor',
+    name='Github PR Monitor',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -38,7 +38,7 @@ exe = EXE(
 )
 app = BUNDLE(
     exe,
-    name='github_pr_monitor.app',
+    name='Github PR Monitor.app',
     icon='assets/github_pr_monitor.icns',
     bundle_identifier='com.ffoissey.githubprmonitor',
     info_plist= {

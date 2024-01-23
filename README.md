@@ -13,12 +13,12 @@ GitHub Pull Request Monitor is a menu bar application for macOS that helps you m
 - pip (Python package manager)
 
 ## Installation
-To set up the GitHub Pull Request Monitor, you need to clone the repository and run the setup script. Make sure you have Python 3 and pip installed on your system.
+To set up the GitHub Pull Request Monitor, you need to clone the repository and run the installation script. Make sure you have Python 3 and pip installed on your system.
 
 ### Steps:
 1. Clone the repository: `git clone https://github.com/ffoissey/github_pr_monitor.git`
 2. Navigate to the cloned repository directory: `cd github_pr_monitor` 
-3. Run the setup script: `./setup.sh`
+3. Run the installation script: `./install.sh`
 
 The script will create a virtual environment, install necessary dependencies, and build the application using PyInstaller.
 

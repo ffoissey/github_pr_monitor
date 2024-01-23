@@ -10,6 +10,7 @@ DIALOG_WIDTH: int = 500
 DEFAULT_REFRESH_DELAY: int = 300
 UPDATE_CHECKER_DELAY: int = 1
 
+DEFAULT_NOTIFICATION_DELAY: int = 3600
 DEFAULT_CONFIG_DIR: str = '~/Library/Application Support/PRMonitor'
 DEFAULT_CONFIG_FILE_NAME: str = 'config.json'
 REPO_SEARCH_FILTER_CONFIG_KEY: str = 'repo_search_filter'

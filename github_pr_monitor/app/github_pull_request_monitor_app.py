@@ -2,36 +2,36 @@ import http
 import logging
 import threading
 import webbrowser
+from datetime import timedelta, datetime
 from typing import Optional, List, Callable, Any, Dict, Tuple
 
 import requests
 from github import GithubException
-from rumps import rumps, MenuItem, separator
+from rumps import MenuItem, separator, notification, Timer, Window, quit_application, App
 
 from github_pr_monitor.app.repository_info_fetcher import RepositoryInfoFetcher
 from github_pr_monitor.config import THREAD_MANAGER
 from github_pr_monitor.constants.app_setting_constants import DIALOG_WIDTH, DIALOG_HEIGHT, DEFAULT_REFRESH_DELAY, \
-    UPDATE_CHECKER_DELAY
+    UPDATE_CHECKER_DELAY, DEFAULT_NOTIFICATION_DELAY
 from github_pr_monitor.constants.display_constants import REFRESH_MENU, SETTINGS_MENU, QUIT_MENU, PAT_SETTING_MENU, \
     REPOSITORY_FILTER_SETTING_MENU, REFRESH_DELAY_SETTING_MENU, INVALID_PAT_MSG, NETWORK_ERROR_MSG, DEFAULT_ERROR, \
     QUITTING, APP_QUITTING, APP_NAME, REFRESHING
 from github_pr_monitor.constants.emojis import NOTIFICATION_EMOJI, NOTHING_TO_DO_EMOJI, NO_PR_EMOJI, ERROR_EMOJI, \
-    IN_PROGRESS_EMOJI
+    IN_PROGRESS_EMOJI, PR_URGENT_EMOJI, PR_COMMENT_EMOJI, AUTHOR_EMOJI
 from github_pr_monitor.managers.config_manager import ConfigManager
 from github_pr_monitor.models.pull_request_info import PullRequestInfo
 from github_pr_monitor.models.repository_info import RepositoryInfo
 from github_pr_monitor.security.keyring_manager import KeyringManager
 
-
-# rumps.debug_mode(True)
-
-# TODO: NOTIFICATION WITH NUMBER OF PR TO REVIEW EACH HOUR
+# TODO: Modify Notification timing
+# TODO: Enable/Disable Notification
+# TODO: Notification icon does not work
 # TODO: Log file
 # TODO: Foreground message dialog
 # TODO: Dialog input validator
 # TODO: Clear cache if force refresh
 
-class GithubPullRequestMonitorApp(rumps.App):
+class GithubPullRequestMonitorApp(App):
 
     def __init__(self, repo_search_filter: Optional[str] = None, ask_pat: Optional[bool] = False):
         super(GithubPullRequestMonitorApp, self).__init__(APP_NAME)
@@ -50,15 +50,24 @@ class GithubPullRequestMonitorApp(rumps.App):
 
         # Settings init
         self.repo_search_filter = repo_search_filter or self.config_manager.get_repo_search_filter()
+        self.notification_delay = DEFAULT_NOTIFICATION_DELAY
         if ask_pat is True or self.keyring_manager.get_github_pat() is None:
             self.ask_for_github_pat()
         self.refresh_delay = self.config_manager.get_refresh_time() or DEFAULT_REFRESH_DELAY
 
         # Timers init
-        self.check_update_timer = rumps.Timer(self._check_if_update_is_ready, UPDATE_CHECKER_DELAY)
-        self.refresh_timer = rumps.Timer(self.refresh, self.refresh_delay)
+
+        # change logic to set different time
+        now = datetime.now()
+        next_hour = (now + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
+        initial_delay = (next_hour - now).total_seconds()
+
+        self.check_update_timer = Timer(self._check_if_update_is_ready, UPDATE_CHECKER_DELAY)
+        self.refresh_timer = Timer(self.refresh, self.refresh_delay)
+        self.hourly_notification_timer = Timer(self.start_hourly_notifications, initial_delay)
 
         self.refresh_timer.start()
+        self.hourly_notification_timer.start()
 
     # Buttons Callbacks
 
@@ -92,6 +101,34 @@ class GithubPullRequestMonitorApp(rumps.App):
     def ask_for_refresh_delay(self, _=None) -> None:
         self._open_dialog(title="Refresh Delay", message="Please enter a delay (in minutes):",
                           callback=self._set_refresh_time, default_text=str(self.refresh_delay // 60))
+
+    # Notification Status
+
+    def start_hourly_notifications(self, _):
+        self.send_hourly_notification()
+
+        self.hourly_notification_timer.stop()
+        self.hourly_notification_timer = Timer(self.send_hourly_notification, self.notification_delay)
+        self.hourly_notification_timer.start()
+
+    def send_hourly_notification(self, _=None):
+        with self.refresh_lock:
+            prs: List[PullRequestInfo] = [pr for repo_info in self.repositories_info for pr in
+                                          repo_info.pull_requests_info]
+            pr_to_review = len([pr for pr in prs if pr.status == PR_URGENT_EMOJI])
+            pr_commented = len([pr for pr in prs if pr.status == PR_COMMENT_EMOJI])
+            pr_in_progress = len([pr for pr in prs if pr.is_author])
+
+        notification_message: str = ''
+        if pr_to_review > 0:
+            notification_message += f"{PR_URGENT_EMOJI} PRs to review: \t\t{pr_to_review}\n"
+        if pr_commented > 0:
+            notification_message += f"{PR_COMMENT_EMOJI} PRs commented: \t{pr_commented}\n"
+        if pr_in_progress > 0:
+            notification_message += f"{AUTHOR_EMOJI} PRs in progress: \t{pr_in_progress}\n"
+        if notification_message:
+            notification("Pull Requests Status", None, notification_message,
+                         sound=True, icon="../assets/github_pr_monitor.icns")
 
     # Setup Callbacks
 
@@ -223,7 +260,7 @@ class GithubPullRequestMonitorApp(rumps.App):
 
     def _open_dialog(self, title: str, message: str, callback: Callable[[str], None], default_text: str = '',
                      secure: bool = False, do_refresh: bool = True) -> None:
-        response = rumps.Window(
+        response = Window(
             title=title,
             message=message,
             default_text=f"{default_text or ''}",
@@ -271,4 +308,4 @@ class GithubPullRequestMonitorApp(rumps.App):
 
     def _quit_application(self) -> None:
         self.thread_manager.wait_for_all_threads()
-        rumps.quit_application()
+        quit_application()
