@@ -52,7 +52,7 @@ read -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     echo -e "${GREY}Adding the application to startup items...${NC}"
-    if osascript -e "tell application \"System Events\" to get the name of every login item" | grep -q "${APP_OUTPUT_NAME}"; then
+    if osascript -e "tell application \"System Events\" to get the name of every login item" | grep -q "${APP_NAME}"; then
         echo -e "${YELLOW}Application already added to startup items.${NC}"
     else
         if osascript -e "tell application \"System Events\" to make new login item at end with properties {path:\"${PWD}/${APP_PATH}\", hidden:false, name:\"${APP_NAME}\"}"; then
