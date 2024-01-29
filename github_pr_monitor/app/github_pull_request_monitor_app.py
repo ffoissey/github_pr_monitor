@@ -23,12 +23,12 @@ from github_pr_monitor.models.pull_request_info import PullRequestInfo
 from github_pr_monitor.models.repository_info import RepositoryInfo
 from github_pr_monitor.security.keyring_manager import KeyringManager
 
+
 # TODO: Modify Notification timing
 # TODO: Enable/Disable Notification
 # TODO: Notification icon does not work
 # TODO: Log file
 # TODO: Foreground message dialog
-# TODO: Dialog input validator
 # TODO: Clear cache if force refresh
 
 class GithubPullRequestMonitorApp(App):
@@ -91,16 +91,22 @@ class GithubPullRequestMonitorApp(App):
         self.thread_manager.start_thread(self._quit_application, daemon=True)
 
     def ask_for_github_pat(self, _=None) -> None:
-        self._open_dialog(title="GitHub Personal Access Token", message="Please enter your GitHub PAT:",
+        self._open_dialog(title="GitHub Personal Access Token", message="Please enter your GitHub PAT",
                           callback=self.keyring_manager.set_github_pat, secure=True)
 
     def ask_for_repository_search_filter(self, _=None) -> None:
-        self._open_dialog(title="Repository Search Filter", message="Please enter a filter:",
+        self._open_dialog(title="Repository Search Filter", message="Please enter a filter",
                           callback=self._set_repo_search_filter, default_text=self.repo_search_filter)
 
     def ask_for_refresh_delay(self, _=None) -> None:
-        self._open_dialog(title="Refresh Delay", message="Please enter a delay (in minutes):",
-                          callback=self._set_refresh_time, default_text=str(self.refresh_delay // 60))
+        validator: Callable[[str], Tuple[bool, str]] = lambda input_value: (
+            int(input_value) > 1, None) \
+            if input_value.isdigit() \
+            else (False, "Please enter an integer value greater than 0")
+
+        self._open_dialog(title="Refresh Delay", message="Please enter a delay (in minutes)",
+                          callback=self._set_refresh_time, default_text=str(self.refresh_delay // 60),
+                          validator_callback=validator)
 
     # Notification Status
 
@@ -147,7 +153,7 @@ class GithubPullRequestMonitorApp(App):
         }
 
     @staticmethod
-    def _on_pr_click(sender) -> None:
+    def _open_web_link(sender) -> None:
         webbrowser.open(sender.url)
 
     # Timer callback
@@ -188,7 +194,8 @@ class GithubPullRequestMonitorApp(App):
             if repository_info.pull_requests_info:
                 has_no_pr = False
                 title: str = repository_info.format_repo_title()
-                submenu = MenuItem(title)
+                submenu = MenuItem(title, callback=self._open_web_link)
+                submenu.url = repository_info.prs_page_url
                 self.menu.add(submenu)
                 self._update_pull_requests(submenu, repository_info.pull_requests_info)
                 is_urgent |= repository_info.is_urgent
@@ -197,8 +204,7 @@ class GithubPullRequestMonitorApp(App):
     def _update_pull_requests(self, submenu: MenuItem, prs_info: List[PullRequestInfo]) -> None:
         for pr_info in prs_info:
             title: str = pr_info.format_pr_title()
-            item = MenuItem(title, callback=self._on_pr_click)
-            item.set_callback(self._on_pr_click)
+            item = MenuItem(title, callback=self._open_web_link)
             item.url = pr_info.url
             submenu.add(item)
 
@@ -258,23 +264,32 @@ class GithubPullRequestMonitorApp(App):
 
     # Dialog Management
 
-    def _open_dialog(self, title: str, message: str, callback: Callable[[str], None], default_text: str = '',
-                     secure: bool = False, do_refresh: bool = True) -> None:
-        response = Window(
-            title=title,
-            message=message,
-            default_text=f"{default_text or ''}",
-            ok="Submit",
-            cancel="Cancel",
-            secure=secure,
-            dimensions=(DIALOG_WIDTH, DIALOG_HEIGHT)
-        ).run()
-        if response.clicked:
-            value: str = response.text.strip()
-            if value != default_text:
-                callback(value)
-                if do_refresh is True:
-                    self.refresh()
+    def _open_dialog(self, title: str, message: str, callback: Callable[[str], None],
+                     validator_callback: Callable[[str], Tuple[bool, str]] = lambda _: (True, ""),
+                     default_text: str = '', secure: bool = False, do_refresh: bool = True) -> None:
+
+        input_is_valid: bool = False
+        error_message: str = ""
+        while not input_is_valid:
+            response = Window(
+                title=title,
+                message=f"{message}{(' - ' + ERROR_EMOJI + ' ' + error_message) if error_message else ''}:",
+                default_text=f"{default_text or ''}",
+                ok="Submit",
+                cancel="Cancel",
+                secure=secure,
+                dimensions=(DIALOG_WIDTH, DIALOG_HEIGHT)
+            ).run()
+            if response.clicked:
+                value: str = response.text.strip()
+                is_valid, error_message = validator_callback(value)
+                if is_valid and value != default_text:
+                    input_is_valid = True
+                    callback(value)
+                    if do_refresh:
+                        self.refresh()
+            else:
+                break
 
     # Buttons Management
 

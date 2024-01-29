@@ -6,8 +6,10 @@ from github_pr_monitor.models.pull_request_info import PullRequestInfo
 
 
 class RepositoryInfo:
-    def __init__(self, name: str, pull_requests_info: List[PullRequestInfo]):
+    def __init__(self, name: str, url: str, pull_requests_info: List[PullRequestInfo]):
         self.name = name
+        self.url = url
+        self.prs_page_url = url + "/pulls"
         self.pull_requests_info = pull_requests_info
         self.status, self.is_urgent = self._get_highest_priority_status()
 

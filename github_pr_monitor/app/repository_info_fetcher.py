@@ -40,7 +40,7 @@ class RepositoryInfoFetcher(GithubAPIFetcher):
                                                                 [self._format_pr_info(pr) for pr in prs]))
         pull_requests_info = sorted(pull_requests_info, key=lambda pull_request_info: pull_request_info.id)
         with self.prs_info_lock:
-            repositories_info.append(RepositoryInfo(name=repo.name, pull_requests_info=pull_requests_info))
+            repositories_info.append(RepositoryInfo(name=repo.name, url=repo.html_url, pull_requests_info=pull_requests_info))
 
     def _format_pr_info(self, pr: PullRequest) -> Optional[PullRequestInfo]:
         if self.abort_process is True:
