@@ -283,11 +283,12 @@ class GithubPullRequestMonitorApp(App):
             if response.clicked:
                 value: str = response.text.strip()
                 is_valid, error_message = validator_callback(value)
-                if is_valid and value != default_text:
+                if is_valid:
                     input_is_valid = True
-                    callback(value)
-                    if do_refresh:
-                        self.refresh()
+                    if value != default_text:
+                        callback(value)
+                        if do_refresh:
+                            self.refresh()
             else:
                 break
 
