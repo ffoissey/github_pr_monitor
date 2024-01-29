@@ -191,7 +191,7 @@ class GithubPullRequestMonitorApp(App):
                 submenu = MenuItem(title)
                 self.menu.add(submenu)
                 self._update_pull_requests(submenu, repository_info.pull_requests_info)
-                is_urgent = repository_info.is_urgent
+                is_urgent |= repository_info.is_urgent
         return is_urgent, has_no_pr
 
     def _update_pull_requests(self, submenu: MenuItem, prs_info: List[PullRequestInfo]) -> None:

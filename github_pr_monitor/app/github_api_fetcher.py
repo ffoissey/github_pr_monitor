@@ -89,7 +89,7 @@ class GithubAPIFetcher:
         except GithubException as e:
             logging.info(f'Failed to fetch branch protection information for repo "{repo_name}" on branch "{branch_name}": {e}')
 
-        self._add_to_cache(cache_key, required_pull_request_review)
+            self._add_to_cache(cache_key, required_pull_request_review)
         return required_pull_request_review
 
     @staticmethod
