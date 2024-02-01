@@ -39,7 +39,7 @@ class ReviewersInfo:
         return list(mandatory_reviewers)
 
     def _has_user_reviewed(self) -> bool:
-        return any(review.user.login == self.current_user for review in self.reviews)
+        return any(review.user.login == self.current_user for review in self.reviews if review.state != 'PENDING')
 
     def _has_user_requested_changes(self) -> bool:
         return any(review.user.login == self.current_user and review.state == self.CHANGED_REQUESTED
