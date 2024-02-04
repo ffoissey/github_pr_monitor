@@ -1,10 +1,13 @@
 import logging
 from time import time
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Union
 
 from github import Github, GithubException
 from github.Auth import Token
+from github.AuthenticatedUser import AuthenticatedUser
 from github.Branch import Branch
+from github.NamedUser import NamedUser
+from github.Organization import Organization
 from github.PaginatedList import PaginatedList
 from github.PullRequest import PullRequest
 from github.PullRequestReview import PullRequestReview
@@ -43,22 +46,18 @@ class GithubAPIFetcher:
                 self._close_github_connection()
             self.github_pat = github_pat
             auth = Token(github_pat)
-            self.github = Github(auth=auth, pool_size=self.pool_size, per_page=100)
+            self.github = Github(auth=auth, pool_size=self.pool_size, per_page=500)
 
-    def get_all_repositories(self, filter_keyword: str = None) -> List[Repository]:
-        cache_key = f"repos__{filter_keyword or 'all'}"
-        cached_repos = self._get_from_cache(cache_key)
-
-        if cached_repos is not None:
-            return cached_repos
-
-        repos = []
-        for repo in self.github.get_user().get_repos():
-            if not filter_keyword or (filter_keyword.lower() in repo.name.lower()):
-                repos.append(repo)
-
-        self._add_to_cache(cache_key, repos)
-        return repos
+    def get_all_repositories(self, filter_keyword: str = None):
+        user = self.github.get_user()
+        organizations = user.get_orgs()
+        all_repos = []
+        for org in organizations:
+            org_repos = self._fetch_all_repositories(org, filter_keyword)
+            all_repos.extend(org_repos)
+        if not all_repos:
+            return self._fetch_all_repositories(user, filter_keyword)
+        return all_repos
 
     def get_current_user_login(self) -> str:
         return self.github.get_user().login
@@ -87,7 +86,8 @@ class GithubAPIFetcher:
             branch: Branch = pull_request.head.repo.get_branch(branch_name)
             required_pull_request_review = branch.get_required_pull_request_reviews()
         except GithubException as e:
-            logging.info(f'Failed to fetch branch protection information for repo "{repo_name}" on branch "{branch_name}": {e}')
+            logging.info(
+                f'Failed to fetch branch protection information for repo "{repo_name}" on branch "{branch_name}": {e}')
 
             self._add_to_cache(cache_key, required_pull_request_review)
         return required_pull_request_review
@@ -95,6 +95,22 @@ class GithubAPIFetcher:
     @staticmethod
     def get_pull_requests_for_repo(repository: Repository) -> PaginatedList[PullRequest]:
         return repository.get_pulls(state='open')
+
+    def _fetch_all_repositories(self, entity: Union[NamedUser, AuthenticatedUser, Organization],
+                                filter_keyword: str = None) -> List[Repository]:
+        cache_key = f"repos__{entity.name}__{filter_keyword or 'all'}"
+        cached_repos = self._get_from_cache(cache_key)
+
+        if cached_repos is not None:
+            return cached_repos
+
+        if filter_keyword:
+            repos = [repo for repo in entity.get_repos() if filter_keyword.lower() in repo.name.lower()]
+        else:
+            repos = list(entity.get_repos())
+
+        self._add_to_cache(cache_key, repos)
+        return repos
 
     def _close_github_connection(self) -> None:
         if self.github is not None:
